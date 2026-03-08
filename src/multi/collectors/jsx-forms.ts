@@ -62,18 +62,16 @@ export function createJSXFormCollector(
       includesName(ds.fieldComponents, name);
 
     if (isField) {
-      const hasAriaInvalid = hasAttr(opening, "aria-invalid");
       const fieldErrorProps = ds.fieldErrorProps ?? ["error", "errorMessage", "invalid"];
       const hasErrorProp = fieldErrorProps.some((prop) => hasAttr(opening, prop));
 
       store.addField({
         node,
         name: attrText(opening, "name") ?? undefined,
-        hasAriaInvalid,
         hasErrorProp,
       });
 
-      if (hasAriaInvalid || hasErrorProp) {
+      if (hasErrorProp) {
         store.addErrorIndicator({
           node,
           kind: "field-error-prop",

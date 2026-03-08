@@ -6,10 +6,16 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
-    "lint": "eslint ."
+    "playground:install": "cd examples/playground && npm install",
+    "playground:dev": "cd examples/playground && npm run dev",
+    "playground:lint": "cd examples/playground && npm run lint",
+    "playground:lint:watch": "chokidar \"dist/**/*.{js,cjs,mjs,d.ts}\" \"examples/playground/**/*.{ts,tsx,js,jsx,json}\" -c \"npm run playground:lint\"",
+    "playground:all": "npm run build && npm run playground:lint && concurrently -n BUILD,APP,LINT -c blue,green,yellow \"npm run dev\" \"npm run playground:dev\" \"npm run playground:lint:watch\""
   },
   "devDependencies": {
     "@typescript-eslint/parser": "^8.0.0",
+    "chokidar-cli": "^3.0.0",
+    "concurrently": "^9.2.1",
     "eslint": "^9.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"

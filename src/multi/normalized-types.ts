@@ -9,7 +9,6 @@ export type NormalizedSubmitControl = {
 export type NormalizedField = {
   node: any;
   name?: string;
-  hasAriaInvalid: boolean;
   hasErrorProp: boolean;
 };
 
