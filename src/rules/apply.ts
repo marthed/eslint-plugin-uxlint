@@ -5,12 +5,10 @@ import { evalExpr, type Expr } from "../shared/dsl";
 
 import { MultiNodeFactStore } from "../multi/fact-store";
 import { createJSXFormCollector } from "../multi/collectors/jsx-forms";
-import { evaluateFormHasSubmitButNoErrorState } from "../multi/evaluators/form-submit-without-error";
-import { InteractionStore } from "../interactions/store";
+import { createComponentStateCollector } from "../interactions/collectors/component-state";
 import { createEventSourceCollector } from "../interactions/collectors/event-sources";
-import { createAsyncHandlerCollector } from "../interactions/collectors/local-state";
-import { createLoadingFeedbackCollector } from "../interactions/collectors/loading-feedback";
 import { evaluateAsyncNoLoading } from "../interactions/evaluators/async-no-loading";
+import { InteractionStore } from "../interactions/store";
 
 const rule: Rule.RuleModule = {
   meta: {
@@ -38,10 +36,10 @@ const rule: Rule.RuleModule = {
 
     const interactionStore = new InteractionStore();
 
+    const componentStateCollector =
+      createComponentStateCollector(interactionStore);
+
     const eventSourceCollector = createEventSourceCollector(interactionStore);
-    const asyncHandlerCollector = createAsyncHandlerCollector(interactionStore);
-    const loadingFeedbackCollector =
-      createLoadingFeedbackCollector(interactionStore);
 
     function applySingleNodeHeuristics(node: any) {
       const signals = makeSignals({ node, sourceCode, filename });
@@ -67,7 +65,6 @@ const rule: Rule.RuleModule = {
       JSXOpeningElement(node: any) {
         applySingleNodeHeuristics(node);
         eventSourceCollector.JSXOpeningElement(node);
-        loadingFeedbackCollector.JSXOpeningElement(node);
       },
 
       JSXElement(node: any) {
@@ -78,23 +75,17 @@ const rule: Rule.RuleModule = {
         jsxCollector["JSXElement:exit"](node);
       },
 
-      JSXText(node: any) {
-        loadingFeedbackCollector.JSXText(node);
-      },
-
       FunctionDeclaration(node: any) {
-        asyncHandlerCollector.FunctionDeclaration(node);
+        componentStateCollector.FunctionDeclaration(node);
       },
 
       VariableDeclarator(node: any) {
-        asyncHandlerCollector.VariableDeclarator(node);
+        componentStateCollector.VariableDeclarator(node);
       },
 
       "Program:exit"() {
-        const formFindings = evaluateFormHasSubmitButNoErrorState(
-          store.getForms(),
-        );
-        for (const finding of formFindings) {
+        const interactionFindings = evaluateAsyncNoLoading(interactionStore);
+        for (const finding of interactionFindings) {
           context.report({
             node: finding.node,
             messageId: "uxFinding",
@@ -102,45 +93,43 @@ const rule: Rule.RuleModule = {
           });
         }
 
-        const interactionFindings = evaluateAsyncNoLoading(interactionStore);
-
         // TEMP DEBUG
-        context.report({
-          loc: { line: 1, column: 0 },
-          messageId: "uxFinding",
-          data: {
-            message:
-              `[DEBUG] sources=${interactionStore.getSources().length}, ` +
-              `handlers=${interactionStore.getHandlers().length}, ` +
-              `loadingFeedback=${interactionStore.getLoadingFeedback().length}, ` +
-              `interactionFindings=${interactionFindings.length}`,
-          },
-        });
+        // context.report({
+        //   loc: { line: 1, column: 0 },
+        //   messageId: "uxFinding",
+        //   data: {
+        //     message:
+        //       `[DEBUG] sources=${interactionStore.getSources().length}, ` +
+        //       `handlers=${interactionStore.getHandlers().length}, ` +
+        //       `loadingFeedback=${interactionStore.getLoadingFeedback().length}, ` +
+        //       `interactionFindings=${interactionFindings.length}`,
+        //   },
+        // });
 
-        context.report({
-          loc: { line: 1, column: 0 },
-          messageId: "uxFinding",
-          data: {
-            message:
-              `[DEBUG NAMES] handlers=` +
-              interactionStore
-                .getHandlers()
-                .map((h) => h.name)
-                .join(", "),
-          },
-        });
-        context.report({
-          loc: { line: 1, column: 0 },
-          messageId: "uxFinding",
-          data: {
-            message:
-              `[DEBUG SOURCES] sourceHandlers=` +
-              interactionStore
-                .getSources()
-                .map((s) => s.handlerName ?? "inline/none")
-                .join(", "),
-          },
-        });
+        // context.report({
+        //   loc: { line: 1, column: 0 },
+        //   messageId: "uxFinding",
+        //   data: {
+        //     message:
+        //       `[DEBUG NAMES] handlers=` +
+        //       interactionStore
+        //         .getHandlers()
+        //         .map((h) => h.name)
+        //         .join(", "),
+        //   },
+        // });
+        // context.report({
+        //   loc: { line: 1, column: 0 },
+        //   messageId: "uxFinding",
+        //   data: {
+        //     message:
+        //       `[DEBUG SOURCES] sourceHandlers=` +
+        //       interactionStore
+        //         .getSources()
+        //         .map((s) => s.handlerName ?? "inline/none")
+        //         .join(", "),
+        //   },
+        // });
 
         for (const finding of interactionFindings) {
           context.report({

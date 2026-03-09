@@ -1,81 +1,63 @@
 import { InteractionStore } from "../store";
-import { getInteractionScopeKey } from "../scope";
 import {
-  getJSXName,
   getJSXAttribute,
+  getJSXName,
   attrText,
 } from "../../multi/collectors/jsx-helpers";
 
-function extractHandler(attr: any) {
+function extractHandlerName(attr: any): string | undefined {
   const value = attr?.value;
-  if (!value || value.type !== "JSXExpressionContainer") return null;
+  if (!value || value.type !== "JSXExpressionContainer") return undefined;
 
   const expr = value.expression;
+  if (expr?.type === "Identifier") return expr.name;
 
-  if (!expr) return null;
+  return undefined;
+}
 
-  if (expr.type === "Identifier") {
-    return { type: "named", name: expr.name };
+function findOwningComponentName(node: any): string {
+  let current = node.parent;
+
+  while (current) {
+    if (current.type === "FunctionDeclaration" && current.id?.name) {
+      return current.id.name;
+    }
+
+    if (
+      current.type === "VariableDeclarator" &&
+      current.id?.type === "Identifier" &&
+      (current.init?.type === "ArrowFunctionExpression" ||
+        current.init?.type === "FunctionExpression")
+    ) {
+      return current.id.name;
+    }
+
+    current = current.parent;
   }
 
-  if (
-    expr.type === "ArrowFunctionExpression" ||
-    expr.type === "FunctionExpression"
-  ) {
-    return { type: "inline", node: expr };
-  }
-
-  return null;
+  return "UnknownComponent";
 }
 
 export function createEventSourceCollector(store: InteractionStore) {
   return {
     JSXOpeningElement(node: any) {
-      const name = getJSXName(node);
-      if (!name) return;
-
       const onClick = getJSXAttribute(node, "onClick");
       const onSubmit = getJSXAttribute(node, "onSubmit");
       const onPress = getJSXAttribute(node, "onPress");
 
-      const attr = onSubmit || onClick || onPress;
-      if (!attr) return;
+      const handlerAttr = onSubmit || onClick || onPress;
+      if (!handlerAttr) return;
 
-      const handler = extractHandler(attr);
-      const scopeKey = getInteractionScopeKey(node);
+      const componentName = findOwningComponentName(node);
 
-      const sourceId = store.nextId("source");
-      const handlerId =
-        handler?.type === "inline" && handler.node.async
-          ? store.nextId("handler")
-          : undefined;
-
-      store.addSource({
-        id: sourceId,
+      store.addInteraction(componentName, {
+        id: store.nextId("interaction"),
         node,
-        scopeKey,
         eventName: onSubmit ? "onSubmit" : onClick ? "onClick" : "onPress",
-        componentName: name,
+        componentName: getJSXName(node) ?? undefined,
         label: attrText(node, "aria-label") ?? undefined,
-        handlerId,
-        handlerName: handler?.type === "named" ? handler.name : undefined,
+        handlerName: extractHandlerName(handlerAttr),
       });
-
-      // If handler is inline async
-      if (handler?.type === "inline") {
-        const fn = handler.node;
-
-        if (fn.async) {
-          store.addHandler({
-            id: handlerId ?? store.nextId("handler"),
-            name: `inline-${sourceId}`,
-            node: fn,
-            scopeKey,
-            asyncKind: "async-function",
-            stateKeysSetLoading: [],
-          });
-        }
-      }
     },
   };
 }

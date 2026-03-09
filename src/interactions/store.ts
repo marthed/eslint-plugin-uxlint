@@ -1,9 +1,14 @@
-import type { AsyncHandler, InteractionSource, LoadingFeedback } from "./types";
+import type {
+  AsyncHandler,
+  ComponentStateModel,
+  InteractionSource,
+  StatePair,
+  StateRead,
+  StateWrite,
+} from "./types";
 
 export class InteractionStore {
-  private sources: InteractionSource[] = [];
-  private handlers: AsyncHandler[] = [];
-  private loadingFeedback: LoadingFeedback[] = [];
+  private components = new Map<string, ComponentStateModel>();
   private idCounter = 0;
 
   nextId(prefix: string): string {
@@ -11,27 +16,44 @@ export class InteractionStore {
     return `${prefix}-${this.idCounter}`;
   }
 
-  addSource(source: InteractionSource) {
-    this.sources.push(source);
+  private getOrCreateComponent(name: string): ComponentStateModel {
+    const existing = this.components.get(name);
+    if (existing) return existing;
+
+    const created: ComponentStateModel = {
+      componentName: name,
+      statePairs: [],
+      stateWrites: [],
+      stateReads: [],
+      handlers: [],
+      interactions: [],
+    };
+
+    this.components.set(name, created);
+    return created;
   }
 
-  addHandler(handler: AsyncHandler) {
-    this.handlers.push(handler);
+  addStatePair(componentName: string, pair: StatePair) {
+    this.getOrCreateComponent(componentName).statePairs.push(pair);
   }
 
-  addLoadingFeedback(feedback: LoadingFeedback) {
-    this.loadingFeedback.push(feedback);
+  addStateWrite(componentName: string, write: StateWrite) {
+    this.getOrCreateComponent(componentName).stateWrites.push(write);
   }
 
-  getSources() {
-    return this.sources;
+  addStateRead(componentName: string, read: StateRead) {
+    this.getOrCreateComponent(componentName).stateReads.push(read);
   }
 
-  getHandlers() {
-    return this.handlers;
+  addHandler(componentName: string, handler: AsyncHandler) {
+    this.getOrCreateComponent(componentName).handlers.push(handler);
   }
 
-  getLoadingFeedback() {
-    return this.loadingFeedback;
+  addInteraction(componentName: string, interaction: InteractionSource) {
+    this.getOrCreateComponent(componentName).interactions.push(interaction);
+  }
+
+  getComponents(): ComponentStateModel[] {
+    return [...this.components.values()];
   }
 }

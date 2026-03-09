@@ -1,10 +1,30 @@
+export type StatePair = {
+  stateVar: string;
+  setterVar: string;
+};
+
+export type StateWrite = {
+  handlerName: string;
+  stateVar: string;
+  setterVar: string;
+};
+
+export type StateRead = {
+  stateVar: string;
+  node: any;
+  kind:
+    | "disabled-prop"
+    | "loading-prop"
+    | "conditional-render"
+    | "ternary-render"
+    | "text-feedback";
+};
+
 export type InteractionSource = {
   id: string;
   node: any;
-  scopeKey: string;
   eventName: "onClick" | "onSubmit" | "onPress" | "unknown";
   label?: string;
-  handlerId?: string;
   handlerName?: string;
   componentName?: string;
 };
@@ -13,26 +33,18 @@ export type AsyncHandler = {
   id: string;
   name: string;
   node: any;
-  scopeKey: string;
-  asyncKind: "async-function" | "await-inside" | "promise-chain" | "mutation-call";
-  stateKeysSetLoading: string[];
+  asyncKind:
+    | "async-function"
+    | "await-inside"
+    | "promise-chain"
+    | "mutation-call";
 };
 
-export type LoadingFeedback = {
-  id: string;
-  node: any;
-  scopeKey: string;
-  kind:
-    | "disabled-control"
-    | "loading-text"
-    | "spinner-component"
-    | "progress-component"
-    | "loading-prop";
-  stateKey?: string;
-};
-
-export type AsyncInteractionFlow = {
-  source: InteractionSource;
-  handler?: AsyncHandler;
-  loadingFeedback: LoadingFeedback[];
+export type ComponentStateModel = {
+  componentName: string;
+  statePairs: StatePair[];
+  stateWrites: StateWrite[];
+  stateReads: StateRead[];
+  handlers: AsyncHandler[];
+  interactions: InteractionSource[];
 };
