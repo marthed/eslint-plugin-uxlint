@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
     "playground:install": "cd examples/playground && npm install",
     "playground:dev": "cd examples/playground && npm run dev",
     "playground:lint": "cd examples/playground && npm run lint",
@@ -17,6 +19,8 @@
     "chokidar-cli": "^3.0.0",
     "concurrently": "^9.2.1",
     "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.1",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
   }
