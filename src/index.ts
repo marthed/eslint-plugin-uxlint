@@ -1,7 +1,7 @@
 import apply from "./rules/apply";
 
 export const rules = {
-  apply
+  apply,
 };
 
 export default { rules };

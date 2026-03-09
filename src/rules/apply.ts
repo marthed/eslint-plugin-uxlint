@@ -16,7 +16,8 @@ const rule: Rule.RuleModule = {
   meta: {
     type: "problem",
     docs: {
-      description: "Apply UX heuristics defined in uxlint rules and multi-node evaluators",
+      description:
+        "Apply UX heuristics defined in uxlint rules and multi-node evaluators",
     },
     schema: [],
     messages: {
@@ -39,7 +40,8 @@ const rule: Rule.RuleModule = {
 
     const eventSourceCollector = createEventSourceCollector(interactionStore);
     const asyncHandlerCollector = createAsyncHandlerCollector(interactionStore);
-    const loadingFeedbackCollector = createLoadingFeedbackCollector(interactionStore);
+    const loadingFeedbackCollector =
+      createLoadingFeedbackCollector(interactionStore);
 
     function applySingleNodeHeuristics(node: any) {
       const signals = makeSignals({ node, sourceCode, filename });
@@ -89,7 +91,9 @@ const rule: Rule.RuleModule = {
       },
 
       "Program:exit"() {
-        const formFindings = evaluateFormHasSubmitButNoErrorState(store.getForms());
+        const formFindings = evaluateFormHasSubmitButNoErrorState(
+          store.getForms(),
+        );
         for (const finding of formFindings) {
           context.report({
             node: finding.node,
@@ -99,6 +103,45 @@ const rule: Rule.RuleModule = {
         }
 
         const interactionFindings = evaluateAsyncNoLoading(interactionStore);
+
+        // TEMP DEBUG
+        context.report({
+          loc: { line: 1, column: 0 },
+          messageId: "uxFinding",
+          data: {
+            message:
+              `[DEBUG] sources=${interactionStore.getSources().length}, ` +
+              `handlers=${interactionStore.getHandlers().length}, ` +
+              `loadingFeedback=${interactionStore.getLoadingFeedback().length}, ` +
+              `interactionFindings=${interactionFindings.length}`,
+          },
+        });
+
+        context.report({
+          loc: { line: 1, column: 0 },
+          messageId: "uxFinding",
+          data: {
+            message:
+              `[DEBUG NAMES] handlers=` +
+              interactionStore
+                .getHandlers()
+                .map((h) => h.name)
+                .join(", "),
+          },
+        });
+        context.report({
+          loc: { line: 1, column: 0 },
+          messageId: "uxFinding",
+          data: {
+            message:
+              `[DEBUG SOURCES] sourceHandlers=` +
+              interactionStore
+                .getSources()
+                .map((s) => s.handlerName ?? "inline/none")
+                .join(", "),
+          },
+        });
+
         for (const finding of interactionFindings) {
           context.report({
             node: finding.node,
