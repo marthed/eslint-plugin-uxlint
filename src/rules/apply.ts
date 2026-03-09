@@ -6,6 +6,11 @@ import { evalExpr, type Expr } from "../shared/dsl";
 import { MultiNodeFactStore } from "../multi/fact-store";
 import { createJSXFormCollector } from "../multi/collectors/jsx-forms";
 import { evaluateFormHasSubmitButNoErrorState } from "../multi/evaluators/form-submit-without-error";
+import { InteractionStore } from "../interactions/store";
+import { createEventSourceCollector } from "../interactions/collectors/event-sources";
+import { createAsyncHandlerCollector } from "../interactions/collectors/local-state";
+import { createLoadingFeedbackCollector } from "../interactions/collectors/loading-feedback";
+import { evaluateAsyncNoLoading } from "../interactions/evaluators/async-no-loading";
 
 const rule: Rule.RuleModule = {
   meta: {
@@ -30,6 +35,12 @@ const rule: Rule.RuleModule = {
     const store = new MultiNodeFactStore(filename);
     const jsxCollector = createJSXFormCollector(store, projectConfig);
 
+    const interactionStore = new InteractionStore();
+
+    const eventSourceCollector = createEventSourceCollector(interactionStore);
+    const asyncHandlerCollector = createAsyncHandlerCollector(interactionStore);
+    const loadingFeedbackCollector = createLoadingFeedbackCollector(interactionStore);
+
     function applySingleNodeHeuristics(node: any) {
       const signals = makeSignals({ node, sourceCode, filename });
 
@@ -53,6 +64,8 @@ const rule: Rule.RuleModule = {
     return {
       JSXOpeningElement(node: any) {
         applySingleNodeHeuristics(node);
+        eventSourceCollector.JSXOpeningElement(node);
+        loadingFeedbackCollector.JSXOpeningElement(node);
       },
 
       JSXElement(node: any) {
@@ -63,10 +76,30 @@ const rule: Rule.RuleModule = {
         jsxCollector["JSXElement:exit"](node);
       },
 
-      "Program:exit"() {
-        const findings = evaluateFormHasSubmitButNoErrorState(store.getForms());
+      JSXText(node: any) {
+        loadingFeedbackCollector.JSXText(node);
+      },
 
-        for (const finding of findings) {
+      FunctionDeclaration(node: any) {
+        asyncHandlerCollector.FunctionDeclaration(node);
+      },
+
+      VariableDeclarator(node: any) {
+        asyncHandlerCollector.VariableDeclarator(node);
+      },
+
+      "Program:exit"() {
+        const formFindings = evaluateFormHasSubmitButNoErrorState(store.getForms());
+        for (const finding of formFindings) {
+          context.report({
+            node: finding.node,
+            messageId: "uxFinding",
+            data: { message: finding.message },
+          });
+        }
+
+        const interactionFindings = evaluateAsyncNoLoading(interactionStore);
+        for (const finding of interactionFindings) {
           context.report({
             node: finding.node,
             messageId: "uxFinding",
