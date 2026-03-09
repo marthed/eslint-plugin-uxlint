@@ -1,17 +1,44 @@
+import {
+  attrText,
+  getJSXAttribute,
+  getJSXName,
+} from "../../multi/collectors/jsx-helpers";
 import { InteractionStore } from "../store";
+import type {
+  InteractionHandler,
+  InteractionPhase,
+  StatePair,
+  StateRead,
+  StateWrite,
+} from "../types";
+
+const FUNCTION_LIKE_TYPES = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+]);
+
+const HANDLER_EVENT_NAMES = ["onSubmit", "onClick", "onPress"] as const;
 
 function isAstNode(value: unknown): value is { type: string } {
   return Boolean(
     value &&
-    typeof value === "object" &&
-    "type" in (value as Record<string, unknown>) &&
-    typeof (value as Record<string, unknown>).type === "string",
+      typeof value === "object" &&
+      "type" in (value as Record<string, unknown>) &&
+      typeof (value as Record<string, unknown>).type === "string",
   );
+}
+
+function isFunctionLikeNode(node: unknown): boolean {
+  return isAstNode(node) && FUNCTION_LIKE_TYPES.has(node.type);
 }
 
 function walkAst(
   node: unknown,
   visitor: (node: any) => void,
+  options?: {
+    skipNestedFunctions?: boolean;
+  },
   visited = new Set<object>(),
 ) {
   if (!isAstNode(node)) return;
@@ -25,188 +52,334 @@ function walkAst(
 
     if (Array.isArray(value)) {
       for (const item of value) {
-        if (isAstNode(item)) {
-          walkAst(item, visitor, visited);
-        }
+        if (!isAstNode(item)) continue;
+        if (options?.skipNestedFunctions && isFunctionLikeNode(item)) continue;
+        walkAst(item, visitor, options, visited);
       }
-    } else if (isAstNode(value)) {
-      walkAst(value, visitor, visited);
+      continue;
     }
+
+    if (!isAstNode(value)) continue;
+    if (options?.skipNestedFunctions && isFunctionLikeNode(value)) continue;
+    walkAst(value, visitor, options, visited);
   }
 }
 
-function getComponentName(node: any): string | null {
-  if (node.type === "FunctionDeclaration") {
-    return node.id?.name ?? null;
+function isReactComponentName(name: string): boolean {
+  return /^[A-Z]/.test(name);
+}
+
+function getComponentModelInput(
+  node: any,
+): { componentName: string; functionNode: any } | null {
+  if (node.type === "FunctionDeclaration" && node.id?.name) {
+    if (!isReactComponentName(node.id.name)) return null;
+    return {
+      componentName: node.id.name,
+      functionNode: node,
+    };
   }
 
   if (
     node.type === "VariableDeclarator" &&
+    node.id?.type === "Identifier" &&
+    isReactComponentName(node.id.name) &&
     (node.init?.type === "ArrowFunctionExpression" ||
       node.init?.type === "FunctionExpression")
   ) {
-    return node.id?.name ?? null;
+    return {
+      componentName: node.id.name,
+      functionNode: node.init,
+    };
   }
 
   return null;
 }
 
-function collectStatePairsFromFunctionBody(body: any) {
-  const pairs: Array<{ stateVar: string; setterVar: string }> = [];
+function isUseStateCallExpression(node: any): boolean {
+  if (node?.type !== "CallExpression") return false;
 
-  if (!body?.body || !Array.isArray(body.body)) return pairs;
+  if (node.callee?.type === "Identifier" && node.callee.name === "useState") {
+    return true;
+  }
 
-  for (const stmt of body.body) {
-    if (stmt.type !== "VariableDeclaration") continue;
+  if (
+    node.callee?.type === "MemberExpression" &&
+    node.callee.object?.type === "Identifier" &&
+    node.callee.object.name === "React" &&
+    node.callee.property?.type === "Identifier" &&
+    node.callee.property.name === "useState" &&
+    node.callee.computed === false
+  ) {
+    return true;
+  }
 
-    for (const decl of stmt.declarations ?? []) {
-      const init = decl.init;
-      const id = decl.id;
+  return false;
+}
 
+function collectStatePairsFromFunctionBody(fnBody: any): StatePair[] {
+  const pairs: StatePair[] = [];
+
+  if (!Array.isArray(fnBody?.body)) return pairs;
+
+  for (const statement of fnBody.body) {
+    if (statement.type !== "VariableDeclaration") continue;
+
+    for (const declarator of statement.declarations ?? []) {
+      if (!isUseStateCallExpression(declarator.init)) continue;
+
+      const pattern = declarator.id;
       if (
-        init?.type === "CallExpression" &&
-        init.callee?.type === "Identifier" &&
-        init.callee.name === "useState" &&
-        id?.type === "ArrayPattern" &&
-        id.elements?.length === 2 &&
-        id.elements[0]?.type === "Identifier" &&
-        id.elements[1]?.type === "Identifier"
+        pattern?.type !== "ArrayPattern" ||
+        pattern.elements?.length !== 2 ||
+        pattern.elements[0]?.type !== "Identifier" ||
+        pattern.elements[1]?.type !== "Identifier"
       ) {
-        pairs.push({
-          stateVar: id.elements[0].name,
-          setterVar: id.elements[1].name,
-        });
+        continue;
       }
+
+      pairs.push({
+        stateVar: pattern.elements[0].name,
+        setterVar: pattern.elements[1].name,
+      });
     }
   }
 
   return pairs;
 }
 
-function functionContainsAwait(node: any): boolean {
-  let found = false;
+function handlerContainsAwait(handlerNode: any): boolean {
+  let foundAwait = false;
 
-  walkAst(node?.body ?? node, (current) => {
-    if (found) return;
-    if (current.type === "AwaitExpression") {
-      found = true;
-    }
-  });
+  walkAst(
+    handlerNode.body ?? handlerNode,
+    (current) => {
+      if (foundAwait) return;
+      if (current.type === "AwaitExpression") {
+        foundAwait = true;
+      }
+    },
+    { skipNestedFunctions: true },
+  );
 
-  return found;
+  return foundAwait;
 }
 
-function collectNamedHandlers(fnBody: any) {
-  const handlers: Array<{
-    name: string;
-    node: any;
-    asyncKind: "async-function" | "await-inside";
-  }> = [];
+function inferIsAsyncHandler(handlerNode: any): boolean {
+  return Boolean(handlerNode?.async) || handlerContainsAwait(handlerNode);
+}
 
-  if (!fnBody?.body || !Array.isArray(fnBody.body)) return handlers;
+function collectNamedHandlers(
+  componentFunctionNode: any,
+  store: InteractionStore,
+): InteractionHandler[] {
+  const handlers: InteractionHandler[] = [];
+  const bodyStatements = componentFunctionNode.body?.body;
 
-  for (const stmt of fnBody.body) {
-    if (stmt.type === "FunctionDeclaration" && stmt.id?.name) {
-      if (stmt.async || functionContainsAwait(stmt)) {
-        handlers.push({
-          name: stmt.id.name,
-          node: stmt,
-          asyncKind: stmt.async ? "async-function" : "await-inside",
-        });
-      }
+  if (!Array.isArray(bodyStatements)) return handlers;
+
+  for (const statement of bodyStatements) {
+    if (statement.type === "FunctionDeclaration" && statement.id?.name) {
+      handlers.push({
+        id: store.nextId("handler"),
+        name: statement.id.name,
+        node: statement,
+        isAsync: inferIsAsyncHandler(statement),
+        kind: "named",
+      });
+      continue;
     }
 
-    if (stmt.type === "VariableDeclaration") {
-      for (const decl of stmt.declarations ?? []) {
-        const init = decl.init;
-        if (
-          decl.id?.type === "Identifier" &&
-          (init?.type === "ArrowFunctionExpression" ||
-            init?.type === "FunctionExpression")
-        ) {
-          if (init.async || functionContainsAwait(init)) {
-            handlers.push({
-              name: decl.id.name,
-              node: init,
-              asyncKind: init.async ? "async-function" : "await-inside",
-            });
-          }
-        }
+    if (statement.type !== "VariableDeclaration") continue;
+
+    for (const declarator of statement.declarations ?? []) {
+      if (declarator.id?.type !== "Identifier") continue;
+      const init = declarator.init;
+      if (
+        init?.type !== "ArrowFunctionExpression" &&
+        init?.type !== "FunctionExpression"
+      ) {
+        continue;
       }
+
+      handlers.push({
+        id: store.nextId("handler"),
+        name: declarator.id.name,
+        node: init,
+        isAsync: inferIsAsyncHandler(init),
+        kind: "named",
+      });
     }
   }
 
   return handlers;
 }
 
-function collectStateWrites(
-  handlerNode: any,
-  statePairs: Array<{ stateVar: string; setterVar: string }>,
-) {
-  const writes: Array<{ stateVar: string; setterVar: string }> = [];
+function getNodeStart(node: any): number | null {
+  if (Array.isArray(node?.range) && typeof node.range[0] === "number") {
+    return node.range[0];
+  }
 
-  walkAst(handlerNode.body ?? handlerNode, (current) => {
-    if (current.type !== "CallExpression") return;
-    if (current.callee?.type !== "Identifier") return;
+  return null;
+}
 
-    const called = current.callee.name;
-    const pair = statePairs.find((p) => p.setterVar === called);
-    if (!pair) return;
+function findFirstAwaitStart(handlerNode: any): number | null {
+  let firstAwaitStart: number | null = null;
 
-    writes.push({
-      stateVar: pair.stateVar,
-      setterVar: pair.setterVar,
-    });
-  });
+  walkAst(
+    handlerNode.body ?? handlerNode,
+    (current) => {
+      if (current.type !== "AwaitExpression") return;
+      const start = getNodeStart(current);
+      if (start === null) return;
+      if (firstAwaitStart === null || start < firstAwaitStart) {
+        firstAwaitStart = start;
+      }
+    },
+    { skipNestedFunctions: true },
+  );
+
+  return firstAwaitStart;
+}
+
+function isInsideCatch(node: any): boolean {
+  let current = node;
+  let parent = node?.parent;
+
+  while (parent) {
+    if (parent.type === "CatchClause" && parent.body === current) {
+      return true;
+    }
+
+    current = parent;
+    parent = parent.parent;
+  }
+
+  return false;
+}
+
+function isInsideFinally(node: any): boolean {
+  let current = node;
+  let parent = node?.parent;
+
+  while (parent) {
+    if (parent.type === "TryStatement" && parent.finalizer === current) {
+      return true;
+    }
+
+    current = parent;
+    parent = parent.parent;
+  }
+
+  return false;
+}
+
+function classifyStateWritePhase(
+  writeNode: any,
+  isAsyncHandler: boolean,
+  firstAwaitStart: number | null,
+): InteractionPhase {
+  if (!isAsyncHandler) return "sync";
+  if (isInsideFinally(writeNode)) return "settled";
+  if (isInsideCatch(writeNode)) return "error";
+
+  const writeStart = getNodeStart(writeNode);
+  if (firstAwaitStart !== null && writeStart !== null && writeStart < firstAwaitStart) {
+    return "start";
+  }
+
+  if (firstAwaitStart !== null) return "success";
+  return "start";
+}
+
+function collectStateWritesForHandler(
+  handler: InteractionHandler,
+  statePairs: StatePair[],
+): StateWrite[] {
+  const writes: StateWrite[] = [];
+  const setterToState = new Map(
+    statePairs.map((pair) => [pair.setterVar, pair.stateVar]),
+  );
+  const firstAwaitStart = handler.isAsync ? findFirstAwaitStart(handler.node) : null;
+
+  walkAst(
+    handler.node.body ?? handler.node,
+    (current) => {
+      if (current.type !== "CallExpression") return;
+      if (current.callee?.type !== "Identifier") return;
+
+      const stateVar = setterToState.get(current.callee.name);
+      if (!stateVar) return;
+
+      writes.push({
+        handlerId: handler.id,
+        stateVar,
+        setterVar: current.callee.name,
+        phase: classifyStateWritePhase(current, handler.isAsync, firstAwaitStart),
+        node: current,
+      });
+    },
+    { skipNestedFunctions: true },
+  );
 
   return writes;
 }
 
-function collectStateReads(
-  componentNode: any,
-  statePairs: Array<{ stateVar: string; setterVar: string }>,
-) {
-  const reads: Array<{
-    stateVar: string;
-    node: any;
-    kind:
-      | "disabled-prop"
-      | "loading-prop"
-      | "conditional-render"
-      | "ternary-render"
-      | "text-feedback";
-  }> = [];
+function getStateIdentifierName(
+  expressionNode: any,
+  stateNames: Set<string>,
+): string | null {
+  if (expressionNode?.type !== "Identifier") return null;
+  if (!stateNames.has(expressionNode.name)) return null;
+  return expressionNode.name;
+}
 
-  const stateNames = new Set(statePairs.map((p) => p.stateVar));
+function isComponentPropPassAttribute(attributeNode: any): boolean {
+  const openingElement = attributeNode?.parent;
+  if (openingElement?.type !== "JSXOpeningElement") return false;
 
-  walkAst(componentNode.body ?? componentNode, (current) => {
-    if (current.type === "JSXAttribute" && current.name?.name === "disabled") {
-      const expr = current.value?.expression;
-      if (expr?.type === "Identifier" && stateNames.has(expr.name)) {
-        reads.push({
-          stateVar: expr.name,
-          node: current,
-          kind: "disabled-prop",
-        });
+  const tagName = getJSXName(openingElement);
+  return Boolean(tagName && /^[A-Z]/.test(tagName));
+}
+
+function collectVisibleStateReads(
+  componentFunctionNode: any,
+  statePairs: StatePair[],
+): StateRead[] {
+  const reads: StateRead[] = [];
+  const stateNames = new Set(statePairs.map((pair) => pair.stateVar));
+
+  if (stateNames.size === 0) return reads;
+
+  walkAst(
+    componentFunctionNode.body ?? componentFunctionNode,
+    (current) => {
+      if (current.type === "JSXAttribute") {
+        const expression = current.value?.expression;
+        const stateVar = getStateIdentifierName(expression, stateNames);
+        if (!stateVar) return;
+
+        const propName = current.name?.name;
+        if (propName === "disabled") {
+          reads.push({ stateVar, node: current, kind: "disabled-prop" });
+          return;
+        }
+
+        if (propName === "loading" || propName === "isLoading") {
+          reads.push({ stateVar, node: current, kind: "loading-prop" });
+          return;
+        }
+
+        if (isComponentPropPassAttribute(current)) {
+          reads.push({ stateVar, node: current, kind: "prop-passed" });
+        }
+
+        return;
       }
-    }
 
-    if (
-      current.type === "JSXAttribute" &&
-      (current.name?.name === "loading" || current.name?.name === "isLoading")
-    ) {
-      const expr = current.value?.expression;
-      if (expr?.type === "Identifier" && stateNames.has(expr.name)) {
-        reads.push({
-          stateVar: expr.name,
-          node: current,
-          kind: "loading-prop",
-        });
-      }
-    }
-
-    if (current.type === "LogicalExpression" && current.operator === "&&") {
       if (
+        current.type === "LogicalExpression" &&
+        current.operator === "&&" &&
         current.left?.type === "Identifier" &&
         stateNames.has(current.left.name)
       ) {
@@ -215,11 +388,11 @@ function collectStateReads(
           node: current,
           kind: "conditional-render",
         });
+        return;
       }
-    }
 
-    if (current.type === "ConditionalExpression") {
       if (
+        current.type === "ConditionalExpression" &&
         current.test?.type === "Identifier" &&
         stateNames.has(current.test.name)
       ) {
@@ -228,82 +401,278 @@ function collectStateReads(
           node: current,
           kind: "ternary-render",
         });
+        return;
       }
-    }
-  });
+
+      if (
+        current.type === "JSXExpressionContainer" &&
+        current.parent?.type !== "JSXAttribute" &&
+        current.expression?.type === "Identifier" &&
+        stateNames.has(current.expression.name)
+      ) {
+        reads.push({
+          stateVar: current.expression.name,
+          node: current,
+          kind: "generic-visible-read",
+        });
+      }
+    },
+    { skipNestedFunctions: true },
+  );
 
   return reads;
+}
+
+function extractDirectCalledHandlerName(expressionNode: any): string | null {
+  if (
+    expressionNode?.type === "CallExpression" &&
+    expressionNode.callee?.type === "Identifier"
+  ) {
+    return expressionNode.callee.name;
+  }
+
+  if (
+    expressionNode?.type === "BlockStatement" &&
+    Array.isArray(expressionNode.body) &&
+    expressionNode.body.length > 0
+  ) {
+    const firstStatement = expressionNode.body[0];
+
+    if (
+      firstStatement?.type === "ExpressionStatement" &&
+      firstStatement.expression?.type === "CallExpression" &&
+      firstStatement.expression.callee?.type === "Identifier"
+    ) {
+      return firstStatement.expression.callee.name;
+    }
+
+    if (
+      firstStatement?.type === "ReturnStatement" &&
+      firstStatement.argument?.type === "CallExpression" &&
+      firstStatement.argument.callee?.type === "Identifier"
+    ) {
+      return firstStatement.argument.callee.name;
+    }
+  }
+
+  return null;
+}
+
+function getEventBinding(openingElement: any): {
+  eventName: "onClick" | "onSubmit" | "onPress" | "unknown";
+  handlerAttribute: any;
+} | null {
+  for (const eventName of HANDLER_EVENT_NAMES) {
+    const attribute = getJSXAttribute(openingElement, eventName);
+    if (!attribute) continue;
+    return { eventName, handlerAttribute: attribute };
+  }
+
+  return null;
+}
+
+function resolveInteractionHandlerReference(
+  handlerAttribute: any,
+  handlersByName: Map<string, InteractionHandler>,
+  statePairs: StatePair[],
+  store: InteractionStore,
+): {
+  handlerId?: string;
+  handlerName?: string;
+  inlineHandler?: InteractionHandler;
+  inlineWrites?: StateWrite[];
+} {
+  const expression = handlerAttribute?.value?.expression;
+  if (!expression) return {};
+
+  if (expression.type === "Identifier") {
+    const namedHandler = handlersByName.get(expression.name);
+    return {
+      handlerId: namedHandler?.id,
+      handlerName: expression.name,
+    };
+  }
+
+  if (
+    expression.type === "ArrowFunctionExpression" ||
+    expression.type === "FunctionExpression"
+  ) {
+    const delegatedHandlerName = extractDirectCalledHandlerName(expression.body);
+    if (delegatedHandlerName) {
+      const namedHandler = handlersByName.get(delegatedHandlerName);
+      return {
+        handlerId: namedHandler?.id,
+        handlerName: delegatedHandlerName,
+      };
+    }
+
+    const inlineHandler: InteractionHandler = {
+      id: store.nextId("handler"),
+      name: "<inline>",
+      node: expression,
+      isAsync: inferIsAsyncHandler(expression),
+      kind: "inline",
+    };
+
+    return {
+      handlerId: inlineHandler.id,
+      handlerName: inlineHandler.name,
+      inlineHandler,
+      inlineWrites: collectStateWritesForHandler(inlineHandler, statePairs),
+    };
+  }
+
+  return {};
+}
+
+function collectInteractionsAndInlineHandlers(
+  componentFunctionNode: any,
+  statePairs: StatePair[],
+  namedHandlersByName: Map<string, InteractionHandler>,
+  store: InteractionStore,
+): {
+  interactions: Array<{
+    id: string;
+    node: any;
+    eventName: "onClick" | "onSubmit" | "onPress" | "unknown";
+    componentName?: string;
+    label?: string;
+    handlerId?: string;
+    handlerName?: string;
+  }>;
+  inlineHandlers: InteractionHandler[];
+  inlineWrites: StateWrite[];
+} {
+  const interactions: Array<{
+    id: string;
+    node: any;
+    eventName: "onClick" | "onSubmit" | "onPress" | "unknown";
+    componentName?: string;
+    label?: string;
+    handlerId?: string;
+    handlerName?: string;
+  }> = [];
+  const inlineHandlers: InteractionHandler[] = [];
+  const inlineWrites: StateWrite[] = [];
+
+  walkAst(
+    componentFunctionNode.body ?? componentFunctionNode,
+    (current) => {
+      if (current.type !== "JSXOpeningElement") return;
+
+      const binding = getEventBinding(current);
+      if (!binding) return;
+
+      const resolution = resolveInteractionHandlerReference(
+        binding.handlerAttribute,
+        namedHandlersByName,
+        statePairs,
+        store,
+      );
+
+      if (resolution.inlineHandler) {
+        inlineHandlers.push(resolution.inlineHandler);
+      }
+
+      if (resolution.inlineWrites?.length) {
+        inlineWrites.push(...resolution.inlineWrites);
+      }
+
+      interactions.push({
+        id: store.nextId("interaction"),
+        node: current,
+        eventName: binding.eventName,
+        componentName: getJSXName(current) ?? undefined,
+        label: attrText(current, "aria-label") ?? undefined,
+        handlerId: resolution.handlerId,
+        handlerName: resolution.handlerName,
+      });
+    },
+    { skipNestedFunctions: true },
+  );
+
+  return { interactions, inlineHandlers, inlineWrites };
+}
+
+function collectComponentFacts(
+  componentFunctionNode: any,
+  store: InteractionStore,
+): {
+  statePairs: StatePair[];
+  handlers: InteractionHandler[];
+  stateWrites: StateWrite[];
+  stateReads: StateRead[];
+  interactions: Array<{
+    id: string;
+    node: any;
+    eventName: "onClick" | "onSubmit" | "onPress" | "unknown";
+    componentName?: string;
+    label?: string;
+    handlerId?: string;
+    handlerName?: string;
+  }>;
+} {
+  const statePairs = collectStatePairsFromFunctionBody(componentFunctionNode.body);
+  const namedHandlers = collectNamedHandlers(componentFunctionNode, store);
+  const handlersByName = new Map(namedHandlers.map((handler) => [handler.name, handler]));
+
+  const stateWrites: StateWrite[] = [];
+  for (const handler of namedHandlers) {
+    stateWrites.push(...collectStateWritesForHandler(handler, statePairs));
+  }
+
+  const stateReads = collectVisibleStateReads(componentFunctionNode, statePairs);
+  const interactionData = collectInteractionsAndInlineHandlers(
+    componentFunctionNode,
+    statePairs,
+    handlersByName,
+    store,
+  );
+
+  return {
+    statePairs,
+    handlers: [...namedHandlers, ...interactionData.inlineHandlers],
+    stateWrites: [...stateWrites, ...interactionData.inlineWrites],
+    stateReads,
+    interactions: interactionData.interactions,
+  };
+}
+
+function collectComponentIntoStore(node: any, store: InteractionStore) {
+  const componentInput = getComponentModelInput(node);
+  if (!componentInput) return;
+
+  const componentFacts = collectComponentFacts(componentInput.functionNode, store);
+
+  for (const statePair of componentFacts.statePairs) {
+    store.addStatePair(componentInput.componentName, statePair);
+  }
+
+  for (const handler of componentFacts.handlers) {
+    store.addHandler(componentInput.componentName, handler);
+  }
+
+  for (const stateWrite of componentFacts.stateWrites) {
+    store.addStateWrite(componentInput.componentName, stateWrite);
+  }
+
+  for (const stateRead of componentFacts.stateReads) {
+    store.addStateRead(componentInput.componentName, stateRead);
+  }
+
+  for (const interaction of componentFacts.interactions) {
+    store.addInteraction(componentInput.componentName, interaction);
+  }
 }
 
 export function createComponentStateCollector(store: InteractionStore) {
   return {
     FunctionDeclaration(node: any) {
-      const componentName = getComponentName(node);
-      if (!componentName) return;
-
-      const statePairs = collectStatePairsFromFunctionBody(node.body);
-      for (const pair of statePairs) {
-        store.addStatePair(componentName, pair);
-      }
-
-      const handlers = collectNamedHandlers(node.body);
-      for (const handler of handlers) {
-        store.addHandler(componentName, {
-          id: store.nextId("handler"),
-          name: handler.name,
-          node: handler.node,
-          asyncKind: handler.asyncKind,
-        });
-
-        const writes = collectStateWrites(handler.node, statePairs);
-        for (const write of writes) {
-          store.addStateWrite(componentName, {
-            handlerName: handler.name,
-            stateVar: write.stateVar,
-            setterVar: write.setterVar,
-          });
-        }
-      }
-
-      const reads = collectStateReads(node, statePairs);
-      for (const read of reads) {
-        store.addStateRead(componentName, read);
-      }
+      collectComponentIntoStore(node, store);
     },
 
     VariableDeclarator(node: any) {
-      const componentName = getComponentName(node);
-      if (!componentName) return;
-
-      const fn = node.init;
-      const statePairs = collectStatePairsFromFunctionBody(fn.body);
-      for (const pair of statePairs) {
-        store.addStatePair(componentName, pair);
-      }
-
-      const handlers = collectNamedHandlers(fn.body);
-      for (const handler of handlers) {
-        store.addHandler(componentName, {
-          id: store.nextId("handler"),
-          name: handler.name,
-          node: handler.node,
-          asyncKind: handler.asyncKind,
-        });
-
-        const writes = collectStateWrites(handler.node, statePairs);
-        for (const write of writes) {
-          store.addStateWrite(componentName, {
-            handlerName: handler.name,
-            stateVar: write.stateVar,
-            setterVar: write.setterVar,
-          });
-        }
-      }
-
-      const reads = collectStateReads(fn, statePairs);
-      for (const read of reads) {
-        store.addStateRead(componentName, read);
-      }
+      collectComponentIntoStore(node, store);
     },
   };
 }

@@ -3,10 +3,22 @@ export type StatePair = {
   setterVar: string;
 };
 
+export type InteractionPhase = "sync" | "start" | "success" | "error" | "settled";
+
+export type InteractionHandler = {
+  id: string;
+  name: string;
+  node: any;
+  isAsync: boolean;
+  kind: "named" | "inline";
+};
+
 export type StateWrite = {
-  handlerName: string;
+  handlerId: string;
   stateVar: string;
   setterVar: string;
+  phase: InteractionPhase;
+  node: any;
 };
 
 export type StateRead = {
@@ -17,7 +29,8 @@ export type StateRead = {
     | "loading-prop"
     | "conditional-render"
     | "ternary-render"
-    | "text-feedback";
+    | "generic-visible-read"
+    | "prop-passed";
 };
 
 export type InteractionSource = {
@@ -25,19 +38,9 @@ export type InteractionSource = {
   node: any;
   eventName: "onClick" | "onSubmit" | "onPress" | "unknown";
   label?: string;
+  handlerId?: string;
   handlerName?: string;
   componentName?: string;
-};
-
-export type AsyncHandler = {
-  id: string;
-  name: string;
-  node: any;
-  asyncKind:
-    | "async-function"
-    | "await-inside"
-    | "promise-chain"
-    | "mutation-call";
 };
 
 export type ComponentStateModel = {
@@ -45,6 +48,6 @@ export type ComponentStateModel = {
   statePairs: StatePair[];
   stateWrites: StateWrite[];
   stateReads: StateRead[];
-  handlers: AsyncHandler[];
+  handlers: InteractionHandler[];
   interactions: InteractionSource[];
 };

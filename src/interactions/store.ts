@@ -1,6 +1,6 @@
 import type {
-  AsyncHandler,
   ComponentStateModel,
+  InteractionHandler,
   InteractionSource,
   StatePair,
   StateRead,
@@ -45,7 +45,7 @@ export class InteractionStore {
     this.getOrCreateComponent(componentName).stateReads.push(read);
   }
 
-  addHandler(componentName: string, handler: AsyncHandler) {
+  addHandler(componentName: string, handler: InteractionHandler) {
     this.getOrCreateComponent(componentName).handlers.push(handler);
   }
 
