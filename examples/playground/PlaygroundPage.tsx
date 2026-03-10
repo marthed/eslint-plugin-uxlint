@@ -470,7 +470,7 @@ function AsyncChildLoadingVisible() {
 }
 
 function SaveFeedbackBadgeGood({ loading }: { loading: boolean }) {
-  return <div>{loading ? "Saving..." : "Idle"}</div>;
+  return <div>{loading ? "Saving..." : ""}</div>;
 }
 
 type MutationStatus = "idle" | "pending" | "success" | "error";
