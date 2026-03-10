@@ -7,7 +7,9 @@ import { InteractionStore } from "../store";
 import type {
   InteractionHandler,
   InteractionPhase,
+  PropRead,
   StatePair,
+  StatePropPass,
   StateRead,
   StateWrite,
 } from "../types";
@@ -457,12 +459,183 @@ function getStateIdentifierName(
   return expressionNode.name;
 }
 
-function isComponentPropPassAttribute(attributeNode: any): boolean {
-  const openingElement = attributeNode?.parent;
-  if (openingElement?.type !== "JSXOpeningElement") return false;
+function collectStateIdentifierNames(
+  expressionNode: any,
+  stateNames: Set<string>,
+): string[] {
+  const foundStateNames = new Set<string>();
+  if (!expressionNode) return [];
 
-  const tagName = getJSXName(openingElement);
-  return Boolean(tagName && /^[A-Z]/.test(tagName));
+  walkAst(expressionNode, (current) => {
+    if (current.type !== "Identifier") return;
+    if (!stateNames.has(current.name)) return;
+
+    const parent = current.parent;
+    if (
+      parent?.type === "MemberExpression" &&
+      parent.property === current &&
+      parent.computed === false
+    ) {
+      return;
+    }
+
+    if (
+      parent?.type === "Property" &&
+      parent.key === current &&
+      parent.computed === false
+    ) {
+      return;
+    }
+
+    foundStateNames.add(current.name);
+  });
+
+  return [...foundStateNames];
+}
+
+function unwrapAssignmentPattern(node: any): any {
+  if (node?.type === "AssignmentPattern") return node.left;
+  return node;
+}
+
+function getObjectPatternPropertyKeyName(propertyNode: any): string | null {
+  if (!propertyNode || propertyNode.type !== "Property" || propertyNode.computed) {
+    return null;
+  }
+
+  if (propertyNode.key?.type === "Identifier") return propertyNode.key.name;
+  if (
+    propertyNode.key?.type === "Literal" &&
+    typeof propertyNode.key.value === "string"
+  ) {
+    return propertyNode.key.value;
+  }
+
+  return null;
+}
+
+function collectComponentPropAliases(componentFunctionNode: any): {
+  localAliasToPropName: Map<string, string>;
+  propsObjectName?: string;
+} {
+  const localAliasToPropName = new Map<string, string>();
+  const firstParam = unwrapAssignmentPattern(componentFunctionNode.params?.[0]);
+
+  if (!firstParam) return { localAliasToPropName };
+
+  if (firstParam.type === "Identifier") {
+    return {
+      localAliasToPropName,
+      propsObjectName: firstParam.name,
+    };
+  }
+
+  if (firstParam.type !== "ObjectPattern") return { localAliasToPropName };
+
+  for (const property of firstParam.properties ?? []) {
+    const propName = getObjectPatternPropertyKeyName(property);
+    if (!propName) continue;
+
+    const value = unwrapAssignmentPattern(property.value);
+    if (value?.type !== "Identifier") continue;
+    localAliasToPropName.set(value.name, propName);
+  }
+
+  return { localAliasToPropName };
+}
+
+function collectPropReferenceNames(
+  expressionNode: any,
+  propAliases: { localAliasToPropName: Map<string, string>; propsObjectName?: string },
+): string[] {
+  const foundPropNames = new Set<string>();
+  if (!expressionNode) return [];
+
+  walkAst(expressionNode, (current) => {
+    if (current.type === "Identifier") {
+      const propName = propAliases.localAliasToPropName.get(current.name);
+      if (!propName) return;
+
+      const parent = current.parent;
+      if (
+        parent?.type === "MemberExpression" &&
+        parent.property === current &&
+        parent.computed === false
+      ) {
+        return;
+      }
+
+      if (
+        parent?.type === "Property" &&
+        parent.key === current &&
+        parent.computed === false
+      ) {
+        return;
+      }
+
+      foundPropNames.add(propName);
+      return;
+    }
+
+    if (
+      current.type === "MemberExpression" &&
+      current.object?.type === "Identifier" &&
+      current.property?.type === "Identifier" &&
+      current.computed === false &&
+      propAliases.propsObjectName &&
+      current.object.name === propAliases.propsObjectName
+    ) {
+      foundPropNames.add(current.property.name);
+    }
+  });
+
+  return [...foundPropNames];
+}
+
+function isComponentJSXName(name: string | null): name is string {
+  return Boolean(name && /^[A-Z]/.test(name));
+}
+
+function collectStatePropPasses(
+  componentFunctionNode: any,
+  statePairs: StatePair[],
+): StatePropPass[] {
+  const passes: StatePropPass[] = [];
+  const stateNames = new Set(statePairs.map((pair) => pair.stateVar));
+
+  if (stateNames.size === 0) return passes;
+
+  walkAst(
+    componentFunctionNode.body ?? componentFunctionNode,
+    (current) => {
+      if (current.type !== "JSXAttribute") return;
+
+      const expression = current.value?.expression;
+      const stateVars = collectStateIdentifierNames(expression, stateNames);
+      if (stateVars.length === 0) return;
+
+      const openingElement = current.parent;
+      if (openingElement?.type !== "JSXOpeningElement") return;
+
+      const childComponentName = getJSXName(openingElement);
+      if (!isComponentJSXName(childComponentName)) return;
+
+      const propName = current.name?.name;
+      if (typeof propName !== "string") return;
+
+      for (const stateVar of stateVars) {
+        passes.push({
+          stateVar,
+          node: current,
+          childComponentName,
+          propName,
+        });
+      }
+    },
+    { skipNestedFunctions: true },
+  );
+
+  return passes;
 }
 
 function collectVisibleStateReads(
@@ -482,19 +655,25 @@ function collectVisibleStateReads(
         const stateVar = getStateIdentifierName(expression, stateNames);
         if (!stateVar) return;
 
+        const openingElement = current.parent;
+        const ownerTagName =
+          openingElement?.type === "JSXOpeningElement"
+            ? getJSXName(openingElement)
+            : null;
+        const belongsToComponent = isComponentJSXName(ownerTagName);
+
         const propName = current.name?.name;
-        if (propName === "disabled") {
+        if (propName === "disabled" && !belongsToComponent) {
           reads.push({ stateVar, node: current, kind: "disabled-prop" });
           return;
         }
 
-        if (propName === "loading" || propName === "isLoading") {
+        if (
+          (propName === "loading" || propName === "isLoading") &&
+          !belongsToComponent
+        ) {
           reads.push({ stateVar, node: current, kind: "loading-prop" });
           return;
-        }
-
-        if (isComponentPropPassAttribute(current)) {
-          reads.push({ stateVar, node: current, kind: "prop-passed" });
         }
 
         return;
@@ -538,6 +717,122 @@ function collectVisibleStateReads(
           node: current,
           kind: "generic-visible-read",
         });
+      }
+    },
+    { skipNestedFunctions: true },
+  );
+
+  return reads;
+}
+
+function collectVisiblePropReads(componentFunctionNode: any): PropRead[] {
+  const reads: PropRead[] = [];
+  const propAliases = collectComponentPropAliases(componentFunctionNode);
+
+  if (
+    propAliases.localAliasToPropName.size === 0 &&
+    !propAliases.propsObjectName
+  ) {
+    return reads;
+  }
+
+  walkAst(
+    componentFunctionNode.body ?? componentFunctionNode,
+    (current) => {
+      if (current.type === "JSXAttribute") {
+        const propNames = collectPropReferenceNames(
+          current.value?.expression,
+          propAliases,
+        );
+        if (propNames.length === 0) return;
+
+        const attributeName = current.name?.name;
+        if (attributeName === "disabled") {
+          for (const propName of propNames) {
+            reads.push({ propName, node: current, kind: "disabled-prop" });
+          }
+          return;
+        }
+
+        if (attributeName === "loading" || attributeName === "isLoading") {
+          for (const propName of propNames) {
+            reads.push({ propName, node: current, kind: "loading-prop" });
+          }
+          return;
+        }
+
+        return;
+      }
+
+      if (current.type === "LogicalExpression" && current.operator === "&&") {
+        const leftPropNames = collectPropReferenceNames(current.left, propAliases);
+        for (const propName of leftPropNames) {
+          reads.push({
+            propName,
+            node: current,
+            kind: "conditional-render",
+          });
+        }
+
+        const rightPropNames = collectPropReferenceNames(current.right, propAliases);
+        for (const propName of rightPropNames) {
+          reads.push({
+            propName,
+            node: current,
+            kind: "generic-visible-read",
+          });
+        }
+        return;
+      }
+
+      if (current.type === "ConditionalExpression") {
+        const testPropNames = collectPropReferenceNames(current.test, propAliases);
+        for (const propName of testPropNames) {
+          reads.push({
+            propName,
+            node: current,
+            kind: "ternary-render",
+          });
+        }
+
+        const consequentPropNames = collectPropReferenceNames(
+          current.consequent,
+          propAliases,
+        );
+        for (const propName of consequentPropNames) {
+          reads.push({
+            propName,
+            node: current,
+            kind: "generic-visible-read",
+          });
+        }
+
+        const alternatePropNames = collectPropReferenceNames(
+          current.alternate,
+          propAliases,
+        );
+        for (const propName of alternatePropNames) {
+          reads.push({
+            propName,
+            node: current,
+            kind: "generic-visible-read",
+          });
+        }
+        return;
+      }
+
+      if (
+        current.type === "JSXExpressionContainer" &&
+        current.parent?.type !== "JSXAttribute"
+      ) {
+        const propNames = collectPropReferenceNames(current.expression, propAliases);
+        for (const propName of propNames) {
+          reads.push({
+            propName,
+            node: current,
+            kind: "generic-visible-read",
+          });
+        }
       }
     },
     { skipNestedFunctions: true },
@@ -734,6 +1029,8 @@ function collectComponentFacts(
   handlers: InteractionHandler[];
   stateWrites: StateWrite[];
   stateReads: StateRead[];
+  propReads: PropRead[];
+  statePropPasses: StatePropPass[];
   interactions: Array<{
     id: string;
     node: any;
@@ -757,6 +1054,8 @@ function collectComponentFacts(
   }
 
   const stateReads = collectVisibleStateReads(componentFunctionNode, statePairs);
+  const propReads = collectVisiblePropReads(componentFunctionNode);
+  const statePropPasses = collectStatePropPasses(componentFunctionNode, statePairs);
   const interactionData = collectInteractionsAndInlineHandlers(
     componentFunctionNode,
     statePairs,
@@ -770,6 +1069,8 @@ function collectComponentFacts(
     handlers: [...namedHandlers, ...interactionData.inlineHandlers],
     stateWrites: [...stateWrites, ...interactionData.inlineWrites],
     stateReads,
+    propReads,
+    statePropPasses,
     interactions: interactionData.interactions,
   };
 }
@@ -777,6 +1078,8 @@ function collectComponentFacts(
 function collectComponentIntoStore(node: any, store: InteractionStore) {
   const componentInput = getComponentModelInput(node);
   if (!componentInput) return;
+
+  store.ensureComponent(componentInput.componentName);
 
   const componentFacts = collectComponentFacts(componentInput.functionNode, store);
 
@@ -794,6 +1097,14 @@ function collectComponentIntoStore(node: any, store: InteractionStore) {
 
   for (const stateRead of componentFacts.stateReads) {
     store.addStateRead(componentInput.componentName, stateRead);
+  }
+
+  for (const propRead of componentFacts.propReads) {
+    store.addPropRead(componentInput.componentName, propRead);
+  }
+
+  for (const statePropPass of componentFacts.statePropPasses) {
+    store.addStatePropPass(componentInput.componentName, statePropPass);
   }
 
   for (const interaction of componentFacts.interactions) {

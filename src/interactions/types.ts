@@ -5,6 +5,13 @@ export type StatePair = {
 
 export type InteractionPhase = "sync" | "start" | "success" | "error" | "settled";
 
+export type VisibleReadKind =
+  | "disabled-prop"
+  | "loading-prop"
+  | "conditional-render"
+  | "ternary-render"
+  | "generic-visible-read";
+
 export type InteractionHandler = {
   id: string;
   name: string;
@@ -24,13 +31,20 @@ export type StateWrite = {
 export type StateRead = {
   stateVar: string;
   node: any;
-  kind:
-    | "disabled-prop"
-    | "loading-prop"
-    | "conditional-render"
-    | "ternary-render"
-    | "generic-visible-read"
-    | "prop-passed";
+  kind: VisibleReadKind;
+};
+
+export type PropRead = {
+  propName: string;
+  node: any;
+  kind: VisibleReadKind;
+};
+
+export type StatePropPass = {
+  stateVar: string;
+  node: any;
+  childComponentName: string;
+  propName: string;
 };
 
 export type InteractionSource = {
@@ -48,6 +62,8 @@ export type ComponentStateModel = {
   statePairs: StatePair[];
   stateWrites: StateWrite[];
   stateReads: StateRead[];
+  propReads: PropRead[];
+  statePropPasses: StatePropPass[];
   handlers: InteractionHandler[];
   interactions: InteractionSource[];
 };

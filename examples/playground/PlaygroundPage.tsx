@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import type { ReactNode } from "react";
 
 export function PlaygroundPage() {
@@ -44,6 +44,12 @@ export function PlaygroundPage() {
         title="Async warning: missing success (INTERACTION-ASYNC-SUCCESS-001)"
         bad={<AsyncMissingSuccess />}
         good={<AsyncAllPhasesVisible />}
+      />
+
+      <CaseRow
+        title="Stage 3: child prop loading visibility"
+        bad={<AsyncChildLoadingNotVisible />}
+        good={<AsyncChildLoadingVisible />}
       />
 
       <CaseRow
@@ -379,6 +385,76 @@ function AsyncMissingSuccess() {
   );
 }
 
+function AsyncChildLoadingNotVisible() {
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [didSave, setDidSave] = React.useState(false);
+  const [didFail, setDidFail] = React.useState(false);
+
+  async function handleSave() {
+    setIsSaving(true);
+    setDidSave(false);
+    setDidFail(false);
+    try {
+      await fakeSave();
+      setDidSave(true);
+    } catch {
+      setDidFail(true);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <button type="button" onClick={handleSave}>
+        Save
+      </button>
+      <SaveFeedbackBadgeBad loading={isSaving} />
+      <div>{didSave && "Saved"}</div>
+      <div>{didFail && "Failed"}</div>
+    </div>
+  );
+}
+
+function SaveFeedbackBadgeBad({ loading: _loading }: { loading: boolean }) {
+  return <div>Idle</div>;
+}
+
+function AsyncChildLoadingVisible() {
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [didSave, setDidSave] = React.useState(false);
+  const [didFail, setDidFail] = React.useState(false);
+
+  async function handleSave() {
+    setIsSaving(true);
+    setDidSave(false);
+    setDidFail(false);
+    try {
+      await fakeSave();
+      setDidSave(true);
+    } catch {
+      setDidFail(true);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <button type="button" onClick={handleSave}>
+        Save
+      </button>
+      <SaveFeedbackBadgeGood loading={isSaving} />
+      <div>{didSave && "Saved"}</div>
+      <div>{didFail && "Failed"}</div>
+    </div>
+  );
+}
+
+function SaveFeedbackBadgeGood({ loading }: { loading: boolean }) {
+  return <div>{loading ? "Saving..." : "Idle"}</div>;
+}
+
 async function fakeSave(shouldFail = false, timeoutMs = 500) {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
@@ -390,3 +466,46 @@ async function fakeSave(shouldFail = false, timeoutMs = 500) {
     }, timeoutMs);
   });
 }
+
+const ParentComp = () => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>("");
+  const [data, setData] = useState<string>("");
+
+  return (
+    <ChildComp
+      loading={loading}
+      onClick={async () => {
+        setLoading(true);
+        try {
+          await fakeSave();
+          setData("Success!");
+        } catch (e) {
+          setError("Failed to Save");
+        }
+        setLoading(false);
+      }}
+      text={error || data}
+    />
+  );
+};
+
+const ChildComp = ({
+  loading,
+  onClick,
+  text = "",
+}: {
+  loading: boolean;
+  onClick: () => {};
+  text: string;
+}) => {
+  return (
+    <div>
+      <button type="button" onClick={onClick}>
+        Save
+      </button>
+      <div>{loading && "Loading..."}</div>
+      <div>{!loading && text}</div>
+    </div>
+  );
+};

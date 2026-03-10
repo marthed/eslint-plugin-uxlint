@@ -2,7 +2,9 @@ import type {
   ComponentStateModel,
   InteractionHandler,
   InteractionSource,
+  PropRead,
   StatePair,
+  StatePropPass,
   StateRead,
   StateWrite,
 } from "./types";
@@ -25,6 +27,8 @@ export class InteractionStore {
       statePairs: [],
       stateWrites: [],
       stateReads: [],
+      propReads: [],
+      statePropPasses: [],
       handlers: [],
       interactions: [],
     };
@@ -45,12 +49,24 @@ export class InteractionStore {
     this.getOrCreateComponent(componentName).stateReads.push(read);
   }
 
+  addPropRead(componentName: string, read: PropRead) {
+    this.getOrCreateComponent(componentName).propReads.push(read);
+  }
+
+  addStatePropPass(componentName: string, pass: StatePropPass) {
+    this.getOrCreateComponent(componentName).statePropPasses.push(pass);
+  }
+
   addHandler(componentName: string, handler: InteractionHandler) {
     this.getOrCreateComponent(componentName).handlers.push(handler);
   }
 
   addInteraction(componentName: string, interaction: InteractionSource) {
     this.getOrCreateComponent(componentName).interactions.push(interaction);
+  }
+
+  ensureComponent(componentName: string) {
+    this.getOrCreateComponent(componentName);
   }
 
   getComponents(): ComponentStateModel[] {
