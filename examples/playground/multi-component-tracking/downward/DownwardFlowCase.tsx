@@ -36,7 +36,6 @@ export function DownwardFlowCase() {
         didSave={didSave}
         didFail={didFail}
       />
-      <div>{didFail}</div>
     </>
   );
 }

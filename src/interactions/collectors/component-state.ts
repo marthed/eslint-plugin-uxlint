@@ -734,6 +734,54 @@ function classifyStateWritePhase(
   return "start";
 }
 
+type WritePhaseContext = {
+  firstAwaitStart: number | null;
+  isAsync: boolean;
+  orderingNode: any | null;
+};
+
+function createWritePhaseContext(
+  functionNode: any,
+  parentContext: WritePhaseContext | null,
+  callSiteNode: any | null,
+): WritePhaseContext {
+  const functionIsAsync = inferIsAsyncHandler(functionNode);
+  if (functionIsAsync) {
+    return {
+      isAsync: true,
+      firstAwaitStart: findFirstAwaitStart(functionNode),
+      orderingNode: null,
+    };
+  }
+
+  if (!parentContext?.isAsync) {
+    return {
+      isAsync: false,
+      firstAwaitStart: null,
+      orderingNode: null,
+    };
+  }
+
+  return {
+    isAsync: true,
+    firstAwaitStart: parentContext.firstAwaitStart,
+    orderingNode: callSiteNode,
+  };
+}
+
+function classifyStateWriteWithContext(
+  writeNode: any,
+  phaseContext: WritePhaseContext,
+  fallbackOrderingNode?: any,
+): InteractionPhase {
+  return classifyStateWritePhase(
+    writeNode,
+    phaseContext.isAsync,
+    phaseContext.firstAwaitStart,
+    phaseContext.orderingNode ?? fallbackOrderingNode ?? writeNode,
+  );
+}
+
 function getBooleanLiteralArgument(callExpressionNode: any): boolean | null {
   const firstArgument = callExpressionNode?.arguments?.[0];
   if (
@@ -757,16 +805,14 @@ function collectStateWritesForHandler(
   const setterToState = new Map(
     statePairs.map((pair) => [pair.setterVar, pair.stateVar]),
   );
-  const firstAwaitStart = handler.isAsync
-    ? findFirstAwaitStart(handler.node)
-    : null;
   const externalWriteKeys = new Set<string>();
+  const rootPhaseContext = createWritePhaseContext(handler.node, null, null);
 
   function collectWritesFromFunction(
     functionNode: any,
     functionFilePath: string,
     setterAliases: Map<string, string>,
-    phaseAnchorNode: any | null,
+    phaseContext: WritePhaseContext,
     activeHelpers: Set<string>,
     depth: number,
   ): StateWrite[] {
@@ -787,11 +833,10 @@ function collectStateWritesForHandler(
             handlerId: handler.id,
             stateVar,
             setterVar: callTargetName,
-            phase: classifyStateWritePhase(
+            phase: classifyStateWriteWithContext(
               current,
-              handler.isAsync,
-              firstAwaitStart,
-              phaseAnchorNode ?? current,
+              phaseContext,
+              current,
             ),
             node: current,
           });
@@ -876,12 +921,17 @@ function collectStateWritesForHandler(
 
         const nestedHelpers = new Set(activeHelpers);
         nestedHelpers.add(helperTraceKey);
+        const helperPhaseContext = createWritePhaseContext(
+          helperFunction.node,
+          phaseContext,
+          current,
+        );
         writes.push(
           ...collectWritesFromFunction(
             helperFunction.node,
             helperFunction.filePath,
             helperSetterAliases,
-            phaseAnchorNode ?? current,
+            helperPhaseContext,
             nestedHelpers,
             depth + 1,
           ),
@@ -897,12 +947,12 @@ function collectStateWritesForHandler(
     handler.node,
     currentFilePath,
     setterToState,
-    null,
+    rootPhaseContext,
     new Set<string>(),
     0,
   );
 
-  if (!handler.isAsync) return writes;
+  if (!writes.some((write) => write.phase !== "sync")) return writes;
 
   // Treat post-await writes that clear a pending flag as settled feedback
   // when the same state var was set to true in start.

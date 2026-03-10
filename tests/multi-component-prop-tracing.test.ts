@@ -19,8 +19,7 @@ function lintIds(options: {
 
 const SHARED_FILES = {
   "src/service.ts": `
-    export async function runSave(setDidSave) {
-      await Promise.resolve();
+    export function runSave(setDidSave) {
       setDidSave(true);
     }
   `,
@@ -62,12 +61,12 @@ serialTest(
           export function Root() {
             const [didSave, setDidSave] = React.useState(false);
 
-            async function handleSave() {
-              await runSave(setDidSave);
+            function handleSave() {
+              runSave(setDidSave);
             }
 
             function onSave() {
-              void handleSave();
+              handleSave();
             }
 
             return <LevelOne onSave={onSave} didSave={didSave} />;
@@ -104,12 +103,12 @@ serialTest(
           export function Root() {
             const [didSave, setDidSave] = React.useState(false);
 
-            async function handleSave() {
-              await runSave(setDidSave);
+            function handleSave() {
+              runSave(setDidSave);
             }
 
             function onSave() {
-              void handleSave();
+              handleSave();
             }
 
             return <LevelOne onSave={onSave} didSave={didSave} />;
