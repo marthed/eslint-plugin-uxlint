@@ -5,6 +5,7 @@ import { evalExpr, type Expr } from "../shared/dsl";
 
 import { MultiNodeFactStore } from "../multi/fact-store";
 import { createJSXFormCollector } from "../multi/collectors/jsx-forms";
+import { evaluateFormHasSubmitButNoErrorState } from "../multi/evaluators/form-submit-without-error";
 import { createComponentStateCollector } from "../interactions/collectors/component-state";
 import { evaluateInteractionFeedback } from "../interactions/evaluators/interaction-feedback";
 import { InteractionStore } from "../interactions/store";
@@ -80,7 +81,19 @@ const rule: Rule.RuleModule = {
       },
 
       "Program:exit"() {
-        const interactionFindings = evaluateInteractionFeedback(interactionStore);
+        const multiNodeFindings = evaluateFormHasSubmitButNoErrorState(
+          store.getForms(),
+        );
+        for (const finding of multiNodeFindings) {
+          context.report({
+            node: finding.node,
+            messageId: "uxFinding",
+            data: { message: finding.message },
+          });
+        }
+
+        const interactionFindings =
+          evaluateInteractionFeedback(interactionStore);
 
         for (const finding of interactionFindings) {
           context.report({

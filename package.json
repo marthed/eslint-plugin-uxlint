@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "test": "node --import tsx --test tests/*.test.ts",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "playground:install": "cd examples/playground && npm install",
@@ -15,6 +16,7 @@
     "playground:all": "npm run build && npm run playground:lint && concurrently -n BUILD,APP,LINT -c blue,green,yellow \"npm run dev\" \"npm run playground:dev\" \"npm run playground:lint:watch\""
   },
   "devDependencies": {
+    "@types/node": "^25.4.0",
     "@typescript-eslint/parser": "^8.0.0",
     "chokidar-cli": "^3.0.0",
     "concurrently": "^9.2.1",
