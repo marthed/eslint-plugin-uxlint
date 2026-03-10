@@ -1,12 +1,22 @@
+import path from "node:path";
 import {
   attrText,
   getJSXAttribute,
   getJSXName,
 } from "../../multi/collectors/jsx-helpers";
+import {
+  ProjectFunctionIndex,
+  type ParserLike,
+  type ResolvedProjectFunction,
+} from "../tracing/project-index";
 import { InteractionStore } from "../store";
 import type {
+  HandlerPropCall,
+  HandlerPropPass,
   InteractionHandler,
   InteractionPhase,
+  PropPass,
+  PropSpreadPass,
   PropRead,
   StatePair,
   StatePropPass,
@@ -37,6 +47,20 @@ const SUCCESS_NAME_HINT =
 const STATUS_NAME_HINT = /status/i;
 const ACTION_NAME_HINT =
   /^(set|save|submit|create|update|remove|delete|load|fetch|mutate)/i;
+const DEFAULT_MAX_HELPER_TRACE_DEPTH = 4;
+
+type HelperFunctionResolver = {
+  resolve(
+    fromFilePath: string,
+    calleeName: string,
+  ): ResolvedProjectFunction | null;
+};
+
+type MultiFileTraceOptions = {
+  filePath: string;
+  projectFunctionIndex: ProjectFunctionIndex;
+  maxTraceDepth: number;
+};
 
 function createExternalStatusModel(): ExternalStatusModel {
   return {
@@ -437,11 +461,8 @@ function getProgramNode(node: any): any | null {
   return current;
 }
 
-function collectNamedFunctionsInSameFile(
-  componentFunctionNode: any,
-): Map<string, any> {
+function collectNamedFunctionsInProgram(programNode: any): Map<string, any> {
   const functionsByName = new Map<string, any>();
-  const programNode = getProgramNode(componentFunctionNode);
   if (!programNode) return functionsByName;
 
   walkAst(programNode, (current) => {
@@ -461,6 +482,55 @@ function collectNamedFunctionsInSameFile(
   });
 
   return functionsByName;
+}
+
+function createHelperFunctionResolver(
+  componentFunctionNode: any,
+  multiFileTraceOptions: MultiFileTraceOptions | null,
+  currentFilePath: string,
+): HelperFunctionResolver {
+  const programNode = getProgramNode(componentFunctionNode);
+  const sameFileFunctionsByName = collectNamedFunctionsInProgram(programNode);
+
+  if (!multiFileTraceOptions || !programNode) {
+    return {
+      resolve(_fromFilePath, calleeName) {
+        const functionNode = sameFileFunctionsByName.get(calleeName);
+        if (!functionNode) return null;
+
+        return {
+          filePath: currentFilePath,
+          functionName: calleeName,
+          node: functionNode,
+        };
+      },
+    };
+  }
+
+  multiFileTraceOptions.projectFunctionIndex.seedProgram(
+    currentFilePath,
+    programNode,
+  );
+
+  return {
+    resolve(fromFilePath, calleeName) {
+      if (path.resolve(fromFilePath) === path.resolve(currentFilePath)) {
+        const sameFileFunction = sameFileFunctionsByName.get(calleeName);
+        if (sameFileFunction) {
+          return {
+            filePath: currentFilePath,
+            functionName: calleeName,
+            node: sameFileFunction,
+          };
+        }
+      }
+
+      return multiFileTraceOptions.projectFunctionIndex.resolveFunction(
+        fromFilePath,
+        calleeName,
+      );
+    },
+  };
 }
 
 function isUseStateCallExpression(node: any): boolean {
@@ -645,12 +715,13 @@ function classifyStateWritePhase(
   writeNode: any,
   isAsyncHandler: boolean,
   firstAwaitStart: number | null,
+  orderingNode?: any,
 ): InteractionPhase {
   if (!isAsyncHandler) return "sync";
   if (isInsideFinally(writeNode)) return "settled";
   if (isInsideCatch(writeNode)) return "error";
 
-  const writeStart = getNodeStart(writeNode);
+  const writeStart = getNodeStart(orderingNode ?? writeNode);
   if (
     firstAwaitStart !== null &&
     writeStart !== null &&
@@ -678,8 +749,10 @@ function getBooleanLiteralArgument(callExpressionNode: any): boolean | null {
 function collectStateWritesForHandler(
   handler: InteractionHandler,
   statePairs: StatePair[],
-  helperFunctionsByName: Map<string, any>,
+  helperFunctionResolver: HelperFunctionResolver,
   externalStatusModel: ExternalStatusModel,
+  currentFilePath: string,
+  maxTraceDepth: number,
 ): StateWrite[] {
   const setterToState = new Map(
     statePairs.map((pair) => [pair.setterVar, pair.stateVar]),
@@ -691,9 +764,11 @@ function collectStateWritesForHandler(
 
   function collectWritesFromFunction(
     functionNode: any,
+    functionFilePath: string,
     setterAliases: Map<string, string>,
     phaseAnchorNode: any | null,
     activeHelpers: Set<string>,
+    depth: number,
   ): StateWrite[] {
     const writes: StateWrite[] = [];
 
@@ -713,9 +788,10 @@ function collectStateWritesForHandler(
             stateVar,
             setterVar: callTargetName,
             phase: classifyStateWritePhase(
-              phaseAnchorNode ?? current,
+              current,
               handler.isAsync,
               firstAwaitStart,
+              phaseAnchorNode ?? current,
             ),
             node: current,
           });
@@ -768,14 +844,20 @@ function collectStateWritesForHandler(
         }
 
         if (!calleeName) return;
+        if (depth >= maxTraceDepth) return;
 
-        const helperFunctionNode = helperFunctionsByName.get(calleeName);
-        if (!helperFunctionNode) return;
-        if (activeHelpers.has(calleeName)) return;
+        const helperFunction = helperFunctionResolver.resolve(
+          functionFilePath,
+          calleeName,
+        );
+        if (!helperFunction) return;
+
+        const helperTraceKey = `${helperFunction.filePath}::${helperFunction.functionName}`;
+        if (activeHelpers.has(helperTraceKey)) return;
 
         const helperSetterAliases = new Map(setterAliases);
-        const helperParams = Array.isArray(helperFunctionNode.params)
-          ? helperFunctionNode.params
+        const helperParams = Array.isArray(helperFunction.node.params)
+          ? helperFunction.node.params
           : [];
         const helperArgs = Array.isArray(current.arguments)
           ? current.arguments
@@ -793,13 +875,15 @@ function collectStateWritesForHandler(
         }
 
         const nestedHelpers = new Set(activeHelpers);
-        nestedHelpers.add(calleeName);
+        nestedHelpers.add(helperTraceKey);
         writes.push(
           ...collectWritesFromFunction(
-            helperFunctionNode,
+            helperFunction.node,
+            helperFunction.filePath,
             helperSetterAliases,
             phaseAnchorNode ?? current,
             nestedHelpers,
+            depth + 1,
           ),
         );
       },
@@ -811,9 +895,11 @@ function collectStateWritesForHandler(
 
   const writes = collectWritesFromFunction(
     handler.node,
+    currentFilePath,
     setterToState,
     null,
     new Set<string>(),
+    0,
   );
 
   if (!handler.isAsync) return writes;
@@ -1037,6 +1123,184 @@ function collectStatePropPasses(
   );
 
   return passes;
+}
+
+function collectPropPasses(componentFunctionNode: any): {
+  propPasses: PropPass[];
+  propSpreadPasses: PropSpreadPass[];
+} {
+  const propAliases = collectComponentPropAliases(componentFunctionNode);
+  const propPasses: PropPass[] = [];
+  const propSpreadPasses: PropSpreadPass[] = [];
+
+  if (
+    propAliases.localAliasToPropName.size === 0 &&
+    !propAliases.propsObjectName
+  ) {
+    return { propPasses, propSpreadPasses };
+  }
+
+  walkAst(
+    componentFunctionNode.body ?? componentFunctionNode,
+    (current) => {
+      if (current.type !== "JSXOpeningElement") return;
+
+      const childComponentName = getJSXName(current);
+      if (!isComponentJSXName(childComponentName)) return;
+
+      for (const attribute of current.attributes ?? []) {
+        if (attribute?.type === "JSXSpreadAttribute") {
+          if (
+            propAliases.propsObjectName &&
+            attribute.argument?.type === "Identifier" &&
+            attribute.argument.name === propAliases.propsObjectName
+          ) {
+            propSpreadPasses.push({
+              childComponentName,
+              node: attribute,
+            });
+          }
+          continue;
+        }
+
+        if (attribute?.type !== "JSXAttribute") continue;
+        const childPropName = attribute.name?.name;
+        if (typeof childPropName !== "string") continue;
+
+        const sourcePropNames = collectPropReferenceNames(
+          attribute.value?.expression,
+          propAliases,
+        );
+        for (const sourcePropName of sourcePropNames) {
+          propPasses.push({
+            sourcePropName,
+            childPropName,
+            childComponentName,
+            node: attribute,
+          });
+        }
+      }
+    },
+    { skipNestedFunctions: true },
+  );
+
+  return { propPasses, propSpreadPasses };
+}
+
+function collectHandlerPropPasses(
+  componentFunctionNode: any,
+  handlersByName: Map<string, InteractionHandler>,
+): HandlerPropPass[] {
+  const passes: HandlerPropPass[] = [];
+  if (handlersByName.size === 0) return passes;
+
+  walkAst(
+    componentFunctionNode.body ?? componentFunctionNode,
+    (current) => {
+      if (current.type !== "JSXOpeningElement") return;
+
+      const childComponentName = getJSXName(current);
+      if (!isComponentJSXName(childComponentName)) return;
+
+      for (const attribute of current.attributes ?? []) {
+        if (attribute?.type !== "JSXAttribute") continue;
+
+        const childPropName = attribute.name?.name;
+        if (typeof childPropName !== "string") continue;
+
+        const expression = attribute.value?.expression;
+        if (!expression) continue;
+
+        let candidateHandlerName: string | null = null;
+
+        if (expression.type === "Identifier") {
+          candidateHandlerName = expression.name;
+        } else if (
+          expression.type === "ArrowFunctionExpression" ||
+          expression.type === "FunctionExpression"
+        ) {
+          candidateHandlerName = extractDirectCalledHandlerName(expression.body);
+        }
+
+        if (!candidateHandlerName) continue;
+        const handler = handlersByName.get(candidateHandlerName);
+        if (!handler) continue;
+
+        passes.push({
+          childComponentName,
+          childPropName,
+          node: attribute,
+          handlerId: handler.id,
+          handlerName: handler.name,
+        });
+      }
+    },
+    { skipNestedFunctions: true },
+  );
+
+  return passes;
+}
+
+function resolveCalledPropName(
+  calleeNode: any,
+  propAliases: {
+    localAliasToPropName: Map<string, string>;
+    propsObjectName?: string;
+  },
+): string | null {
+  if (calleeNode?.type === "Identifier") {
+    return propAliases.localAliasToPropName.get(calleeNode.name) ?? null;
+  }
+
+  if (
+    calleeNode?.type === "MemberExpression" &&
+    calleeNode.computed === false &&
+    calleeNode.object?.type === "Identifier" &&
+    calleeNode.property?.type === "Identifier" &&
+    propAliases.propsObjectName &&
+    calleeNode.object.name === propAliases.propsObjectName
+  ) {
+    return calleeNode.property.name;
+  }
+
+  return null;
+}
+
+function collectHandlerPropCalls(
+  componentFunctionNode: any,
+  handlers: InteractionHandler[],
+): HandlerPropCall[] {
+  const calls: HandlerPropCall[] = [];
+  if (handlers.length === 0) return calls;
+
+  const propAliases = collectComponentPropAliases(componentFunctionNode);
+  if (
+    propAliases.localAliasToPropName.size === 0 &&
+    !propAliases.propsObjectName
+  ) {
+    return calls;
+  }
+
+  for (const handler of handlers) {
+    walkAst(
+      handler.node.body ?? handler.node,
+      (current) => {
+        if (current.type !== "CallExpression") return;
+
+        const propName = resolveCalledPropName(current.callee, propAliases);
+        if (!propName) return;
+
+        calls.push({
+          handlerId: handler.id,
+          propName,
+          node: current,
+        });
+      },
+      { skipNestedFunctions: true },
+    );
+  }
+
+  return calls;
 }
 
 function collectVisibleStateReads(
@@ -1316,9 +1580,11 @@ function resolveInteractionHandlerReference(
   handlerAttribute: any,
   handlersByName: Map<string, InteractionHandler>,
   statePairs: StatePair[],
-  helperFunctionsByName: Map<string, any>,
+  helperFunctionResolver: HelperFunctionResolver,
   externalStatusModel: ExternalStatusModel,
   store: InteractionStore,
+  currentFilePath: string,
+  maxTraceDepth: number,
 ): {
   handlerId?: string;
   handlerName?: string;
@@ -1368,8 +1634,10 @@ function resolveInteractionHandlerReference(
       inlineWrites: collectStateWritesForHandler(
         inlineHandler,
         statePairs,
-        helperFunctionsByName,
+        helperFunctionResolver,
         externalStatusModel,
+        currentFilePath,
+        maxTraceDepth,
       ),
     };
   }
@@ -1381,9 +1649,11 @@ function collectInteractionsAndInlineHandlers(
   componentFunctionNode: any,
   statePairs: StatePair[],
   namedHandlersByName: Map<string, InteractionHandler>,
-  helperFunctionsByName: Map<string, any>,
+  helperFunctionResolver: HelperFunctionResolver,
   externalStatusModel: ExternalStatusModel,
   store: InteractionStore,
+  currentFilePath: string,
+  maxTraceDepth: number,
 ): {
   interactions: Array<{
     id: string;
@@ -1421,9 +1691,11 @@ function collectInteractionsAndInlineHandlers(
         binding.handlerAttribute,
         namedHandlersByName,
         statePairs,
-        helperFunctionsByName,
+        helperFunctionResolver,
         externalStatusModel,
         store,
+        currentFilePath,
+        maxTraceDepth,
       );
 
       if (resolution.inlineHandler) {
@@ -1453,6 +1725,8 @@ function collectInteractionsAndInlineHandlers(
 function collectComponentFacts(
   componentFunctionNode: any,
   store: InteractionStore,
+  multiFileTraceOptions: MultiFileTraceOptions | null,
+  componentFilePath?: string,
 ): {
   statePairs: StatePair[];
   handlers: InteractionHandler[];
@@ -1460,6 +1734,10 @@ function collectComponentFacts(
   stateReads: StateRead[];
   propReads: PropRead[];
   statePropPasses: StatePropPass[];
+  propPasses: PropPass[];
+  propSpreadPasses: PropSpreadPass[];
+  handlerPropPasses: HandlerPropPass[];
+  handlerPropCalls: HandlerPropCall[];
   interactions: Array<{
     id: string;
     node: any;
@@ -1479,10 +1757,18 @@ function collectComponentFacts(
       .map((pair) => pair.stateVar)
       .concat([...externalStatusModel.observableStateVars]),
   );
+  const currentFilePath =
+    componentFilePath ??
+    multiFileTraceOptions?.filePath ??
+    "<current-file>";
   const namedHandlers = collectNamedHandlers(componentFunctionNode, store);
-  const helperFunctionsByName = collectNamedFunctionsInSameFile(
+  const helperFunctionResolver = createHelperFunctionResolver(
     componentFunctionNode,
+    multiFileTraceOptions,
+    currentFilePath,
   );
+  const maxTraceDepth =
+    multiFileTraceOptions?.maxTraceDepth ?? DEFAULT_MAX_HELPER_TRACE_DEPTH;
   const handlersByName = new Map(
     namedHandlers.map((handler) => [handler.name, handler]),
   );
@@ -1493,8 +1779,10 @@ function collectComponentFacts(
       ...collectStateWritesForHandler(
         handler,
         statePairs,
-        helperFunctionsByName,
+        helperFunctionResolver,
         externalStatusModel,
+        currentFilePath,
+        maxTraceDepth,
       ),
     );
   }
@@ -1508,74 +1796,252 @@ function collectComponentFacts(
     componentFunctionNode,
     observableStateVars,
   );
+  const { propPasses, propSpreadPasses } =
+    collectPropPasses(componentFunctionNode);
+  const handlerPropPasses = collectHandlerPropPasses(
+    componentFunctionNode,
+    handlersByName,
+  );
   const interactionData = collectInteractionsAndInlineHandlers(
     componentFunctionNode,
     statePairs,
     handlersByName,
-    helperFunctionsByName,
+    helperFunctionResolver,
     externalStatusModel,
     store,
+    currentFilePath,
+    maxTraceDepth,
+  );
+  const handlers = [...namedHandlers, ...interactionData.inlineHandlers];
+  const handlerPropCalls = collectHandlerPropCalls(
+    componentFunctionNode,
+    handlers,
   );
 
   return {
     statePairs,
-    handlers: [...namedHandlers, ...interactionData.inlineHandlers],
+    handlers,
     stateWrites: [...stateWrites, ...interactionData.inlineWrites],
     stateReads,
     propReads,
     statePropPasses,
+    propPasses,
+    propSpreadPasses,
+    handlerPropPasses,
+    handlerPropCalls,
     interactions: interactionData.interactions,
   };
 }
 
-function collectComponentIntoStore(node: any, store: InteractionStore) {
+function collectComponentIntoStore(
+  node: any,
+  store: InteractionStore,
+  multiFileTraceOptions: MultiFileTraceOptions | null,
+  visitedComponents: Set<string>,
+  entryFilePath: string,
+) {
   const componentInput = getComponentModelInput(node);
   if (!componentInput) return;
 
-  store.ensureComponent(componentInput.componentName);
+  const componentFilePath = multiFileTraceOptions
+    ? multiFileTraceOptions.filePath
+    : "<current-file>";
 
-  const componentFacts = collectComponentFacts(
+  collectResolvedComponentIntoStore(
+    componentInput.componentName,
     componentInput.functionNode,
+    componentFilePath,
     store,
+    multiFileTraceOptions,
+    visitedComponents,
+    entryFilePath,
+  );
+}
+
+function collectChildComponentNames(componentFunctionNode: any): string[] {
+  const names = new Set<string>();
+
+  walkAst(
+    componentFunctionNode.body ?? componentFunctionNode,
+    (current) => {
+      if (current.type !== "JSXOpeningElement") return;
+      const childComponentName = getJSXName(current);
+      if (!isComponentJSXName(childComponentName)) return;
+      names.add(childComponentName);
+    },
+    { skipNestedFunctions: true },
   );
 
+  return [...names];
+}
+
+function addComponentFactsToStore(
+  componentName: string,
+  componentFacts: ReturnType<typeof collectComponentFacts>,
+  store: InteractionStore,
+) {
+  store.ensureComponent(componentName);
+
   for (const statePair of componentFacts.statePairs) {
-    store.addStatePair(componentInput.componentName, statePair);
+    store.addStatePair(componentName, statePair);
   }
 
   for (const handler of componentFacts.handlers) {
-    store.addHandler(componentInput.componentName, handler);
+    store.addHandler(componentName, handler);
   }
 
   for (const stateWrite of componentFacts.stateWrites) {
-    store.addStateWrite(componentInput.componentName, stateWrite);
+    store.addStateWrite(componentName, stateWrite);
   }
 
   for (const stateRead of componentFacts.stateReads) {
-    store.addStateRead(componentInput.componentName, stateRead);
+    store.addStateRead(componentName, stateRead);
   }
 
   for (const propRead of componentFacts.propReads) {
-    store.addPropRead(componentInput.componentName, propRead);
+    store.addPropRead(componentName, propRead);
   }
 
   for (const statePropPass of componentFacts.statePropPasses) {
-    store.addStatePropPass(componentInput.componentName, statePropPass);
+    store.addStatePropPass(componentName, statePropPass);
+  }
+
+  for (const propPass of componentFacts.propPasses) {
+    store.addPropPass(componentName, propPass);
+  }
+
+  for (const propSpreadPass of componentFacts.propSpreadPasses) {
+    store.addPropSpreadPass(componentName, propSpreadPass);
+  }
+
+  for (const handlerPropPass of componentFacts.handlerPropPasses) {
+    store.addHandlerPropPass(componentName, handlerPropPass);
+  }
+
+  for (const handlerPropCall of componentFacts.handlerPropCalls) {
+    store.addHandlerPropCall(componentName, handlerPropCall);
   }
 
   for (const interaction of componentFacts.interactions) {
-    store.addInteraction(componentInput.componentName, interaction);
+    store.addInteraction(componentName, interaction);
   }
 }
 
-export function createComponentStateCollector(store: InteractionStore) {
+function hasLocalInteractionState(
+  componentFacts: ReturnType<typeof collectComponentFacts>,
+): boolean {
+  return (
+    componentFacts.statePairs.length > 0 ||
+    componentFacts.stateWrites.length > 0 ||
+    componentFacts.stateReads.length > 0
+  );
+}
+
+function collectResolvedComponentIntoStore(
+  componentName: string,
+  componentFunctionNode: any,
+  componentFilePath: string,
+  store: InteractionStore,
+  multiFileTraceOptions: MultiFileTraceOptions | null,
+  visitedComponents: Set<string>,
+  entryFilePath: string,
+) {
+  if (!isReactComponentName(componentName)) return;
+
+  const resolvedFilePath = path.resolve(componentFilePath);
+  const componentKey = `${resolvedFilePath}::${componentName}`;
+  if (visitedComponents.has(componentKey)) return;
+  visitedComponents.add(componentKey);
+
+  const componentFacts = collectComponentFacts(
+    componentFunctionNode,
+    store,
+    multiFileTraceOptions,
+    resolvedFilePath,
+  );
+  if (
+    resolvedFilePath !== entryFilePath &&
+    hasLocalInteractionState(componentFacts)
+  ) {
+    return;
+  }
+
+  addComponentFactsToStore(
+    componentName,
+    componentFacts,
+    store,
+  );
+
+  if (!multiFileTraceOptions) return;
+
+  for (const childComponentName of collectChildComponentNames(
+    componentFunctionNode,
+  )) {
+    const resolvedChild = multiFileTraceOptions.projectFunctionIndex.resolveFunction(
+      resolvedFilePath,
+      childComponentName,
+    );
+    if (!resolvedChild) continue;
+
+    collectResolvedComponentIntoStore(
+      resolvedChild.functionName,
+      resolvedChild.node,
+      resolvedChild.filePath,
+      store,
+      multiFileTraceOptions,
+      visitedComponents,
+      entryFilePath,
+    );
+  }
+}
+
+type ComponentStateCollectorOptions = {
+  filePath?: string;
+  parser?: ParserLike;
+  parserOptions?: Record<string, unknown>;
+  projectRoot?: string;
+  maxTraceDepth?: number;
+};
+
+export function createComponentStateCollector(
+  store: InteractionStore,
+  options?: ComponentStateCollectorOptions,
+) {
+  const multiFileTraceOptions: MultiFileTraceOptions | null = options?.filePath
+    ? {
+        filePath: path.resolve(options.filePath),
+        projectFunctionIndex: new ProjectFunctionIndex({
+          projectRoot: path.resolve(options.projectRoot ?? process.cwd()),
+          parser: options.parser,
+          parserOptions: options.parserOptions,
+        }),
+        maxTraceDepth: options.maxTraceDepth ?? DEFAULT_MAX_HELPER_TRACE_DEPTH,
+      }
+    : null;
+  const visitedComponents = new Set<string>();
+  const entryFilePath = path.resolve(
+    options?.filePath ?? multiFileTraceOptions?.filePath ?? "<current-file>",
+  );
+
   return {
     FunctionDeclaration(node: any) {
-      collectComponentIntoStore(node, store);
+      collectComponentIntoStore(
+        node,
+        store,
+        multiFileTraceOptions,
+        visitedComponents,
+        entryFilePath,
+      );
     },
 
     VariableDeclarator(node: any) {
-      collectComponentIntoStore(node, store);
+      collectComponentIntoStore(
+        node,
+        store,
+        multiFileTraceOptions,
+        visitedComponents,
+        entryFilePath,
+      );
     },
   };
 }

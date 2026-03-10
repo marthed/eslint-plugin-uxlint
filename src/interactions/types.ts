@@ -47,6 +47,32 @@ export type StatePropPass = {
   propName: string;
 };
 
+export type PropPass = {
+  sourcePropName: string;
+  childPropName: string;
+  childComponentName: string;
+  node: any;
+};
+
+export type PropSpreadPass = {
+  childComponentName: string;
+  node: any;
+};
+
+export type HandlerPropPass = {
+  childComponentName: string;
+  childPropName: string;
+  node: any;
+  handlerId?: string;
+  handlerName?: string;
+};
+
+export type HandlerPropCall = {
+  handlerId: string;
+  propName: string;
+  node: any;
+};
+
 export type InteractionSource = {
   id: string;
   node: any;
@@ -64,6 +90,10 @@ export type ComponentStateModel = {
   stateReads: StateRead[];
   propReads: PropRead[];
   statePropPasses: StatePropPass[];
+  propPasses: PropPass[];
+  propSpreadPasses: PropSpreadPass[];
+  handlerPropPasses: HandlerPropPass[];
+  handlerPropCalls: HandlerPropCall[];
   handlers: InteractionHandler[];
   interactions: InteractionSource[];
 };

@@ -1,7 +1,11 @@
 import type {
   ComponentStateModel,
+  HandlerPropCall,
+  HandlerPropPass,
   InteractionHandler,
   InteractionSource,
+  PropPass,
+  PropSpreadPass,
   PropRead,
   StatePair,
   StatePropPass,
@@ -29,6 +33,10 @@ export class InteractionStore {
       stateReads: [],
       propReads: [],
       statePropPasses: [],
+      propPasses: [],
+      propSpreadPasses: [],
+      handlerPropPasses: [],
+      handlerPropCalls: [],
       handlers: [],
       interactions: [],
     };
@@ -55,6 +63,22 @@ export class InteractionStore {
 
   addStatePropPass(componentName: string, pass: StatePropPass) {
     this.getOrCreateComponent(componentName).statePropPasses.push(pass);
+  }
+
+  addPropPass(componentName: string, pass: PropPass) {
+    this.getOrCreateComponent(componentName).propPasses.push(pass);
+  }
+
+  addPropSpreadPass(componentName: string, pass: PropSpreadPass) {
+    this.getOrCreateComponent(componentName).propSpreadPasses.push(pass);
+  }
+
+  addHandlerPropPass(componentName: string, pass: HandlerPropPass) {
+    this.getOrCreateComponent(componentName).handlerPropPasses.push(pass);
+  }
+
+  addHandlerPropCall(componentName: string, call: HandlerPropCall) {
+    this.getOrCreateComponent(componentName).handlerPropCalls.push(call);
   }
 
   addHandler(componentName: string, handler: InteractionHandler) {

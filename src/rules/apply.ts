@@ -36,8 +36,15 @@ const rule: Rule.RuleModule = {
 
     const interactionStore = new InteractionStore();
 
-    const componentStateCollector =
-      createComponentStateCollector(interactionStore);
+    const componentStateCollector = createComponentStateCollector(
+      interactionStore,
+      {
+        filePath: filename,
+        parser: (context as any).languageOptions?.parser,
+        parserOptions: (context as any).languageOptions?.parserOptions,
+        projectRoot: cwd,
+      },
+    );
 
     function applySingleNodeHeuristics(node: any) {
       const signals = makeSignals({ node, sourceCode, filename });

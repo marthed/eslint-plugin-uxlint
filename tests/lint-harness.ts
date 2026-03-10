@@ -19,9 +19,45 @@ const EMPTY_UXLINT_FILE: HeuristicFile = {
 const tsParser = (tsParserModule as any).default ?? tsParserModule;
 const apply = (applyModule as any).default ?? applyModule;
 
-function withTemporaryUXLintFile<T>(
+function createApplyRuleConfig() {
+  return [
+    {
+      files: ["**/*.{js,jsx,ts,tsx}"],
+      languageOptions: {
+        parser: tsParser,
+        parserOptions: {
+          ecmaVersion: "latest",
+          sourceType: "module",
+          ecmaFeatures: { jsx: true },
+        },
+      },
+      plugins: {
+        uxlint: {
+          rules: { apply },
+        },
+      },
+      rules: {
+        "uxlint/apply": "warn",
+      },
+    },
+  ];
+}
+
+function writeProjectFiles(
+  rootDirectory: string,
+  files: Record<string, string>,
+) {
+  for (const [projectFilePath, content] of Object.entries(files)) {
+    const absoluteFilePath = path.resolve(rootDirectory, projectFilePath);
+    fs.mkdirSync(path.dirname(absoluteFilePath), { recursive: true });
+    fs.writeFileSync(absoluteFilePath, content, "utf8");
+  }
+}
+
+function withTemporaryProject<T>(
   uxlintFile: HeuristicFile,
-  run: () => T,
+  files: Record<string, string>,
+  run: (tempDir: string) => T,
 ): T {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "uxlint-tests-"));
   const prevCwd = process.cwd();
@@ -32,8 +68,9 @@ function withTemporaryUXLintFile<T>(
       JSON.stringify(uxlintFile),
       "utf8",
     );
+    writeProjectFiles(tempDir, files);
     process.chdir(tempDir);
-    return run();
+    return run(tempDir);
   } finally {
     process.chdir(prevCwd);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -47,34 +84,38 @@ export function lintWithApplyRule(
     uxlintFile?: HeuristicFile;
   },
 ) {
+  const entryFilePath = options?.filename ?? "test.tsx";
+
+  return lintProjectWithApplyRule({
+    entryFilePath,
+    files: {
+      [entryFilePath]: code,
+    },
+    uxlintFile: options?.uxlintFile,
+  });
+}
+
+export function lintProjectWithApplyRule(options: {
+  entryFilePath: string;
+  files: Record<string, string>;
+  uxlintFile?: HeuristicFile;
+}) {
   const linter = new Linter();
 
-  return withTemporaryUXLintFile(options?.uxlintFile ?? EMPTY_UXLINT_FILE, () =>
-    linter.verify(
-      code,
-      [
-        {
-          files: ["**/*.{js,jsx,ts,tsx}"],
-          languageOptions: {
-            parser: tsParser,
-            parserOptions: {
-              ecmaVersion: "latest",
-              sourceType: "module",
-              ecmaFeatures: { jsx: true },
-            },
-          },
-          plugins: {
-            uxlint: {
-              rules: { apply },
-            },
-          },
-          rules: {
-            "uxlint/apply": "warn",
-          },
-        },
-      ],
-      { filename: options?.filename ?? "test.tsx" },
-    ),
+  return withTemporaryProject(
+    options.uxlintFile ?? EMPTY_UXLINT_FILE,
+    options.files,
+    (tempDir) => {
+      const entryFileAbsolutePath = path.resolve(
+        tempDir,
+        options.entryFilePath,
+      );
+      const entryCode = fs.readFileSync(entryFileAbsolutePath, "utf8");
+
+      return linter.verify(entryCode, createApplyRuleConfig(), {
+        filename: options.entryFilePath,
+      });
+    },
   );
 }
 
