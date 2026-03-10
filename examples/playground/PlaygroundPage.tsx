@@ -153,12 +153,12 @@ function IconButton(props: any) {
 function SyncNoVisibleFeedback() {
   const [isOpen, setIsOpen] = React.useState(false);
 
-  function handleToggle() {
-    setIsOpen(!isOpen);
-  }
-
   return (
-    <button type="button" onClick={handleToggle} style={{ justifySelf: "start" }}>
+    <button
+      type="button"
+      onClick={() => toggleOpenState(setIsOpen, isOpen)}
+      style={{ justifySelf: "start" }}
+    >
       Toggle
     </button>
   );
@@ -167,18 +167,18 @@ function SyncNoVisibleFeedback() {
 function SyncVisibleFeedback() {
   const [isOpen, setIsOpen] = React.useState(false);
 
-  function handleToggle() {
-    setIsOpen(!isOpen);
-  }
-
   return (
     <div>
-      <button type="button" onClick={handleToggle}>
+      <button type="button" onClick={() => toggleOpenState(setIsOpen, isOpen)}>
         Toggle
       </button>
       <div>{isOpen ? "Open" : "Closed"}</div>
     </div>
   );
+}
+
+function toggleOpenState(setOpen: (value: boolean) => void, isOpen: boolean) {
+  setOpen(!isOpen);
 }
 
 function AsyncAllPhasesVisible() {

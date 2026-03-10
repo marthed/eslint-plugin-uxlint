@@ -96,6 +96,40 @@ function getComponentModelInput(
   return null;
 }
 
+function getProgramNode(node: any): any | null {
+  let current = node;
+  while (current?.parent) {
+    current = current.parent;
+  }
+
+  if (current?.type !== "Program") return null;
+  return current;
+}
+
+function collectNamedFunctionsInSameFile(componentFunctionNode: any): Map<string, any> {
+  const functionsByName = new Map<string, any>();
+  const programNode = getProgramNode(componentFunctionNode);
+  if (!programNode) return functionsByName;
+
+  walkAst(programNode, (current) => {
+    if (current.type === "FunctionDeclaration" && current.id?.name) {
+      functionsByName.set(current.id.name, current);
+      return;
+    }
+
+    if (
+      current.type === "VariableDeclarator" &&
+      current.id?.type === "Identifier" &&
+      (current.init?.type === "ArrowFunctionExpression" ||
+        current.init?.type === "FunctionExpression")
+    ) {
+      functionsByName.set(current.id.name, current.init);
+    }
+  });
+
+  return functionsByName;
+}
+
 function isUseStateCallExpression(node: any): boolean {
   if (node?.type !== "CallExpression") return false;
 
@@ -307,31 +341,87 @@ function getBooleanLiteralArgument(callExpressionNode: any): boolean | null {
 function collectStateWritesForHandler(
   handler: InteractionHandler,
   statePairs: StatePair[],
+  helperFunctionsByName: Map<string, any>,
 ): StateWrite[] {
-  const writes: StateWrite[] = [];
   const setterToState = new Map(
     statePairs.map((pair) => [pair.setterVar, pair.stateVar]),
   );
   const firstAwaitStart = handler.isAsync ? findFirstAwaitStart(handler.node) : null;
 
-  walkAst(
-    handler.node.body ?? handler.node,
-    (current) => {
-      if (current.type !== "CallExpression") return;
-      if (current.callee?.type !== "Identifier") return;
+  function collectWritesFromFunction(
+    functionNode: any,
+    setterAliases: Map<string, string>,
+    phaseAnchorNode: any | null,
+    activeHelpers: Set<string>,
+  ): StateWrite[] {
+    const writes: StateWrite[] = [];
 
-      const stateVar = setterToState.get(current.callee.name);
-      if (!stateVar) return;
+    walkAst(
+      functionNode.body ?? functionNode,
+      (current) => {
+        if (current.type !== "CallExpression") return;
+        if (current.callee?.type !== "Identifier") return;
 
-      writes.push({
-        handlerId: handler.id,
-        stateVar,
-        setterVar: current.callee.name,
-        phase: classifyStateWritePhase(current, handler.isAsync, firstAwaitStart),
-        node: current,
-      });
-    },
-    { skipNestedFunctions: true },
+        const calleeName = current.callee.name;
+        const stateVar = setterAliases.get(calleeName);
+        if (stateVar) {
+          writes.push({
+            handlerId: handler.id,
+            stateVar,
+            setterVar: calleeName,
+            phase: classifyStateWritePhase(
+              phaseAnchorNode ?? current,
+              handler.isAsync,
+              firstAwaitStart,
+            ),
+            node: current,
+          });
+          return;
+        }
+
+        const helperFunctionNode = helperFunctionsByName.get(calleeName);
+        if (!helperFunctionNode) return;
+        if (activeHelpers.has(calleeName)) return;
+
+        const helperSetterAliases = new Map(setterAliases);
+        const helperParams = Array.isArray(helperFunctionNode.params)
+          ? helperFunctionNode.params
+          : [];
+        const helperArgs = Array.isArray(current.arguments) ? current.arguments : [];
+
+        for (let index = 0; index < helperParams.length; index += 1) {
+          const param = helperParams[index];
+          const arg = helperArgs[index];
+          if (param?.type !== "Identifier") continue;
+          if (arg?.type !== "Identifier") continue;
+
+          const argStateVar = setterAliases.get(arg.name);
+          if (!argStateVar) continue;
+          helperSetterAliases.set(param.name, argStateVar);
+        }
+
+        const nestedHelpers = new Set(activeHelpers);
+        nestedHelpers.add(calleeName);
+        writes.push(
+          ...collectWritesFromFunction(
+            helperFunctionNode,
+            helperSetterAliases,
+            phaseAnchorNode ?? current,
+            nestedHelpers,
+          ),
+        );
+      },
+      { skipNestedFunctions: true },
+    );
+
+    return writes;
+  }
+
+  const writes = collectWritesFromFunction(
+    handler.node,
+    setterToState,
+    null,
+    new Set<string>(),
   );
 
   if (!handler.isAsync) return writes;
@@ -508,6 +598,7 @@ function resolveInteractionHandlerReference(
   handlerAttribute: any,
   handlersByName: Map<string, InteractionHandler>,
   statePairs: StatePair[],
+  helperFunctionsByName: Map<string, any>,
   store: InteractionStore,
 ): {
   handlerId?: string;
@@ -533,10 +624,12 @@ function resolveInteractionHandlerReference(
     const delegatedHandlerName = extractDirectCalledHandlerName(expression.body);
     if (delegatedHandlerName) {
       const namedHandler = handlersByName.get(delegatedHandlerName);
-      return {
-        handlerId: namedHandler?.id,
-        handlerName: delegatedHandlerName,
-      };
+      if (namedHandler) {
+        return {
+          handlerId: namedHandler.id,
+          handlerName: delegatedHandlerName,
+        };
+      }
     }
 
     const inlineHandler: InteractionHandler = {
@@ -551,7 +644,11 @@ function resolveInteractionHandlerReference(
       handlerId: inlineHandler.id,
       handlerName: inlineHandler.name,
       inlineHandler,
-      inlineWrites: collectStateWritesForHandler(inlineHandler, statePairs),
+      inlineWrites: collectStateWritesForHandler(
+        inlineHandler,
+        statePairs,
+        helperFunctionsByName,
+      ),
     };
   }
 
@@ -562,6 +659,7 @@ function collectInteractionsAndInlineHandlers(
   componentFunctionNode: any,
   statePairs: StatePair[],
   namedHandlersByName: Map<string, InteractionHandler>,
+  helperFunctionsByName: Map<string, any>,
   store: InteractionStore,
 ): {
   interactions: Array<{
@@ -600,6 +698,7 @@ function collectInteractionsAndInlineHandlers(
         binding.handlerAttribute,
         namedHandlersByName,
         statePairs,
+        helperFunctionsByName,
         store,
       );
 
@@ -647,11 +746,14 @@ function collectComponentFacts(
 } {
   const statePairs = collectStatePairsFromFunctionBody(componentFunctionNode.body);
   const namedHandlers = collectNamedHandlers(componentFunctionNode, store);
+  const helperFunctionsByName = collectNamedFunctionsInSameFile(componentFunctionNode);
   const handlersByName = new Map(namedHandlers.map((handler) => [handler.name, handler]));
 
   const stateWrites: StateWrite[] = [];
   for (const handler of namedHandlers) {
-    stateWrites.push(...collectStateWritesForHandler(handler, statePairs));
+    stateWrites.push(
+      ...collectStateWritesForHandler(handler, statePairs, helperFunctionsByName),
+    );
   }
 
   const stateReads = collectVisibleStateReads(componentFunctionNode, statePairs);
@@ -659,6 +761,7 @@ function collectComponentFacts(
     componentFunctionNode,
     statePairs,
     handlersByName,
+    helperFunctionsByName,
     store,
   );
 
