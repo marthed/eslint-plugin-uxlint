@@ -22,12 +22,341 @@ const FUNCTION_LIKE_TYPES = new Set([
 
 const HANDLER_EVENT_NAMES = ["onSubmit", "onClick", "onPress"] as const;
 
+type ExternalStatusModel = {
+  observableStateVars: Set<string>;
+  statusPhasesByStateVar: Map<string, Set<InteractionPhase>>;
+  triggerStateVarsByIdentifier: Map<string, Set<string>>;
+  triggerStateVarsByMember: Map<string, Map<string, Set<string>>>;
+};
+
+const PENDING_NAME_HINT =
+  /(pending|loading|saving|submitting|fetching|mutating)/i;
+const ERROR_NAME_HINT = /(error|failed|failure|invalid)/i;
+const SUCCESS_NAME_HINT =
+  /(success|succeed|succeeded|saved|done|complete|completed)/i;
+const STATUS_NAME_HINT = /status/i;
+const ACTION_NAME_HINT =
+  /^(set|save|submit|create|update|remove|delete|load|fetch|mutate)/i;
+
+function createExternalStatusModel(): ExternalStatusModel {
+  return {
+    observableStateVars: new Set<string>(),
+    statusPhasesByStateVar: new Map<string, Set<InteractionPhase>>(),
+    triggerStateVarsByIdentifier: new Map<string, Set<string>>(),
+    triggerStateVarsByMember: new Map<string, Map<string, Set<string>>>(),
+  };
+}
+
+function addStatusPhases(
+  model: ExternalStatusModel,
+  stateVar: string,
+  phases: Iterable<InteractionPhase>,
+) {
+  const existingPhases =
+    model.statusPhasesByStateVar.get(stateVar) ?? new Set<InteractionPhase>();
+
+  for (const phase of phases) {
+    existingPhases.add(phase);
+  }
+
+  if (existingPhases.size === 0) return;
+  model.observableStateVars.add(stateVar);
+  model.statusPhasesByStateVar.set(stateVar, existingPhases);
+}
+
+function addTriggerIdentifier(
+  model: ExternalStatusModel,
+  triggerName: string,
+  stateVars: Iterable<string>,
+) {
+  const existingStateVars =
+    model.triggerStateVarsByIdentifier.get(triggerName) ?? new Set<string>();
+
+  for (const stateVar of stateVars) {
+    existingStateVars.add(stateVar);
+  }
+
+  if (existingStateVars.size === 0) return;
+  model.triggerStateVarsByIdentifier.set(triggerName, existingStateVars);
+}
+
+function addTriggerMember(
+  model: ExternalStatusModel,
+  objectName: string,
+  methodName: string,
+  stateVars: Iterable<string>,
+) {
+  const methodsForObject =
+    model.triggerStateVarsByMember.get(objectName) ??
+    new Map<string, Set<string>>();
+  const existingStateVars =
+    methodsForObject.get(methodName) ?? new Set<string>();
+
+  for (const stateVar of stateVars) {
+    existingStateVars.add(stateVar);
+  }
+
+  if (existingStateVars.size === 0) return;
+  methodsForObject.set(methodName, existingStateVars);
+  model.triggerStateVarsByMember.set(objectName, methodsForObject);
+}
+
+function getMemberExpressionName(node: any): string | null {
+  if (
+    node?.type !== "MemberExpression" ||
+    node.computed !== false ||
+    node.object?.type !== "Identifier" ||
+    node.property?.type !== "Identifier"
+  ) {
+    return null;
+  }
+
+  return `${node.object.name}.${node.property.name}`;
+}
+
+function getCallTargetName(node: any): string {
+  if (node?.type === "Identifier") return node.name;
+
+  const memberExpressionName = getMemberExpressionName(node);
+  if (memberExpressionName) return memberExpressionName;
+
+  return "<call>";
+}
+
+function getStatusPhasesFromName(name: string): Set<InteractionPhase> {
+  const phases = new Set<InteractionPhase>();
+
+  if (PENDING_NAME_HINT.test(name)) {
+    phases.add("start");
+    phases.add("settled");
+  }
+
+  if (ERROR_NAME_HINT.test(name)) {
+    phases.add("error");
+  }
+
+  if (SUCCESS_NAME_HINT.test(name)) {
+    phases.add("success");
+  }
+
+  if (STATUS_NAME_HINT.test(name)) {
+    phases.add("start");
+    phases.add("settled");
+    phases.add("error");
+    phases.add("success");
+  }
+
+  return phases;
+}
+
+function isUseMutationCallExpression(node: any): boolean {
+  return node?.type === "CallExpression" && node.callee?.type === "Identifier"
+    ? node.callee.name === "useMutation"
+    : false;
+}
+
+function isUseSelectorCallExpression(node: any): boolean {
+  return node?.type === "CallExpression" && node.callee?.type === "Identifier"
+    ? node.callee.name === "useSelector"
+    : false;
+}
+
+function isUseDispatchCallExpression(node: any): boolean {
+  return node?.type === "CallExpression" && node.callee?.type === "Identifier"
+    ? node.callee.name === "useDispatch"
+    : false;
+}
+
+function isLikelyUseStoreHook(node: any): boolean {
+  if (node?.type !== "CallExpression") return false;
+  if (node.callee?.type !== "Identifier") return false;
+  return node.callee.name === "useStore" || /Store$/.test(node.callee.name);
+}
+
+function isActionLikeName(name: string): boolean {
+  return ACTION_NAME_HINT.test(name);
+}
+
+function extractReturnedNodeFromSelector(selectorNode: any): any | null {
+  if (!selectorNode) return null;
+
+  if (
+    selectorNode.type === "ArrowFunctionExpression" ||
+    selectorNode.type === "FunctionExpression"
+  ) {
+    if (selectorNode.body?.type === "BlockStatement") {
+      for (const statement of selectorNode.body.body ?? []) {
+        if (statement.type !== "ReturnStatement") continue;
+        return statement.argument ?? null;
+      }
+      return null;
+    }
+
+    return selectorNode.body ?? null;
+  }
+
+  return null;
+}
+
+function extractSelectedStoreMemberName(selectorNode: any): string | null {
+  const returnedNode = extractReturnedNodeFromSelector(selectorNode);
+  if (!returnedNode) return null;
+
+  if (
+    returnedNode.type === "MemberExpression" &&
+    returnedNode.computed === false &&
+    returnedNode.property?.type === "Identifier"
+  ) {
+    return returnedNode.property.name;
+  }
+
+  return null;
+}
+
+function collectExternalStatusModel(
+  componentFunctionNode: any,
+): ExternalStatusModel {
+  const model = createExternalStatusModel();
+  const reduxStateVars = new Set<string>();
+  const reduxTriggerNames = new Set<string>();
+  const zustandStateVars = new Set<string>();
+  const zustandTriggerNames = new Set<string>();
+
+  walkAst(
+    componentFunctionNode.body ?? componentFunctionNode,
+    (current) => {
+      if (current.type !== "VariableDeclarator") return;
+      if (current.init?.type !== "CallExpression") return;
+
+      if (isUseMutationCallExpression(current.init)) {
+        if (current.id?.type === "ObjectPattern") {
+          const mutationStatusStateVars = new Set<string>();
+          const mutationTriggerNames = new Set<string>();
+
+          for (const property of current.id.properties ?? []) {
+            const keyName = getObjectPatternPropertyKeyName(property);
+            if (!keyName) continue;
+
+            const valueNode = unwrapAssignmentPattern(property.value);
+            if (valueNode?.type !== "Identifier") continue;
+
+            if (keyName === "mutate" || keyName === "mutateAsync") {
+              mutationTriggerNames.add(valueNode.name);
+              continue;
+            }
+
+            const phaseHints = getStatusPhasesFromName(keyName);
+            if (phaseHints.size === 0) continue;
+
+            addStatusPhases(model, valueNode.name, phaseHints);
+            mutationStatusStateVars.add(valueNode.name);
+          }
+
+          for (const triggerName of mutationTriggerNames) {
+            addTriggerIdentifier(model, triggerName, mutationStatusStateVars);
+          }
+        }
+
+        if (current.id?.type === "Identifier") {
+          const mutationObjectName = current.id.name;
+          const memberStatusFields: Array<{
+            fieldName: string;
+            phases: InteractionPhase[];
+          }> = [
+            { fieldName: "isPending", phases: ["start", "settled"] },
+            { fieldName: "isLoading", phases: ["start", "settled"] },
+            { fieldName: "isError", phases: ["error"] },
+            { fieldName: "error", phases: ["error"] },
+            { fieldName: "isSuccess", phases: ["success"] },
+            {
+              fieldName: "status",
+              phases: ["start", "settled", "error", "success"],
+            },
+          ];
+
+          const memberStatusStateVars = new Set<string>();
+          for (const memberStatusField of memberStatusFields) {
+            const stateVar = `${mutationObjectName}.${memberStatusField.fieldName}`;
+            addStatusPhases(model, stateVar, memberStatusField.phases);
+            memberStatusStateVars.add(stateVar);
+          }
+
+          addTriggerMember(
+            model,
+            mutationObjectName,
+            "mutate",
+            memberStatusStateVars,
+          );
+          addTriggerMember(
+            model,
+            mutationObjectName,
+            "mutateAsync",
+            memberStatusStateVars,
+          );
+        }
+
+        return;
+      }
+
+      if (isUseDispatchCallExpression(current.init)) {
+        if (current.id?.type !== "Identifier") return;
+        reduxTriggerNames.add(current.id.name);
+        return;
+      }
+
+      if (isUseSelectorCallExpression(current.init)) {
+        if (current.id?.type !== "Identifier") return;
+
+        const selectorPhases = getStatusPhasesFromName(current.id.name);
+        if (selectorPhases.size === 0) return;
+
+        addStatusPhases(model, current.id.name, selectorPhases);
+        reduxStateVars.add(current.id.name);
+        return;
+      }
+
+      if (!isLikelyUseStoreHook(current.init)) return;
+      if (current.id?.type !== "Identifier") return;
+
+      const selectedStoreMember = extractSelectedStoreMemberName(
+        current.init.arguments?.[0],
+      );
+      if (!selectedStoreMember) return;
+
+      const selectedStatePhases = getStatusPhasesFromName(selectedStoreMember);
+      if (selectedStatePhases.size > 0) {
+        addStatusPhases(model, current.id.name, selectedStatePhases);
+        zustandStateVars.add(current.id.name);
+        return;
+      }
+
+      if (
+        isActionLikeName(selectedStoreMember) ||
+        isActionLikeName(current.id.name)
+      ) {
+        zustandTriggerNames.add(current.id.name);
+      }
+    },
+    { skipNestedFunctions: true },
+  );
+
+  for (const reduxTriggerName of reduxTriggerNames) {
+    addTriggerIdentifier(model, reduxTriggerName, reduxStateVars);
+  }
+
+  for (const zustandTriggerName of zustandTriggerNames) {
+    addTriggerIdentifier(model, zustandTriggerName, zustandStateVars);
+  }
+
+  return model;
+}
+
 function isAstNode(value: unknown): value is { type: string } {
   return Boolean(
     value &&
-      typeof value === "object" &&
-      "type" in (value as Record<string, unknown>) &&
-      typeof (value as Record<string, unknown>).type === "string",
+    typeof value === "object" &&
+    "type" in (value as Record<string, unknown>) &&
+    typeof (value as Record<string, unknown>).type === "string",
   );
 }
 
@@ -108,7 +437,9 @@ function getProgramNode(node: any): any | null {
   return current;
 }
 
-function collectNamedFunctionsInSameFile(componentFunctionNode: any): Map<string, any> {
+function collectNamedFunctionsInSameFile(
+  componentFunctionNode: any,
+): Map<string, any> {
   const functionsByName = new Map<string, any>();
   const programNode = getProgramNode(componentFunctionNode);
   if (!programNode) return functionsByName;
@@ -320,7 +651,11 @@ function classifyStateWritePhase(
   if (isInsideCatch(writeNode)) return "error";
 
   const writeStart = getNodeStart(writeNode);
-  if (firstAwaitStart !== null && writeStart !== null && writeStart < firstAwaitStart) {
+  if (
+    firstAwaitStart !== null &&
+    writeStart !== null &&
+    writeStart < firstAwaitStart
+  ) {
     return "start";
   }
 
@@ -344,11 +679,15 @@ function collectStateWritesForHandler(
   handler: InteractionHandler,
   statePairs: StatePair[],
   helperFunctionsByName: Map<string, any>,
+  externalStatusModel: ExternalStatusModel,
 ): StateWrite[] {
   const setterToState = new Map(
     statePairs.map((pair) => [pair.setterVar, pair.stateVar]),
   );
-  const firstAwaitStart = handler.isAsync ? findFirstAwaitStart(handler.node) : null;
+  const firstAwaitStart = handler.isAsync
+    ? findFirstAwaitStart(handler.node)
+    : null;
+  const externalWriteKeys = new Set<string>();
 
   function collectWritesFromFunction(
     functionNode: any,
@@ -362,15 +701,17 @@ function collectStateWritesForHandler(
       functionNode.body ?? functionNode,
       (current) => {
         if (current.type !== "CallExpression") return;
-        if (current.callee?.type !== "Identifier") return;
 
-        const calleeName = current.callee.name;
-        const stateVar = setterAliases.get(calleeName);
+        const calleeName =
+          current.callee?.type === "Identifier" ? current.callee.name : null;
+        const callTargetName = getCallTargetName(current.callee);
+
+        const stateVar = calleeName ? setterAliases.get(calleeName) : undefined;
         if (stateVar) {
           writes.push({
             handlerId: handler.id,
             stateVar,
-            setterVar: calleeName,
+            setterVar: callTargetName,
             phase: classifyStateWritePhase(
               phaseAnchorNode ?? current,
               handler.isAsync,
@@ -378,8 +719,55 @@ function collectStateWritesForHandler(
             ),
             node: current,
           });
-          return;
         }
+
+        const triggeredStateVars = new Set<string>();
+        if (calleeName) {
+          for (const triggeredStateVar of externalStatusModel.triggerStateVarsByIdentifier.get(
+            calleeName,
+          ) ?? []) {
+            triggeredStateVars.add(triggeredStateVar);
+          }
+        }
+
+        if (
+          current.callee?.type === "MemberExpression" &&
+          current.callee.computed === false &&
+          current.callee.object?.type === "Identifier" &&
+          current.callee.property?.type === "Identifier"
+        ) {
+          const methodsForObject =
+            externalStatusModel.triggerStateVarsByMember.get(
+              current.callee.object.name,
+            );
+          for (const triggeredStateVar of methodsForObject?.get(
+            current.callee.property.name,
+          ) ?? []) {
+            triggeredStateVars.add(triggeredStateVar);
+          }
+        }
+
+        for (const triggeredStateVar of triggeredStateVars) {
+          const phases =
+            externalStatusModel.statusPhasesByStateVar.get(triggeredStateVar);
+          if (!phases || phases.size === 0) continue;
+
+          for (const phase of phases) {
+            const writeKey = `${triggeredStateVar}:${phase}:${callTargetName}`;
+            if (externalWriteKeys.has(writeKey)) continue;
+            externalWriteKeys.add(writeKey);
+
+            writes.push({
+              handlerId: handler.id,
+              stateVar: triggeredStateVar,
+              setterVar: callTargetName,
+              phase,
+              node: current,
+            });
+          }
+        }
+
+        if (!calleeName) return;
 
         const helperFunctionNode = helperFunctionsByName.get(calleeName);
         if (!helperFunctionNode) return;
@@ -389,7 +777,9 @@ function collectStateWritesForHandler(
         const helperParams = Array.isArray(helperFunctionNode.params)
           ? helperFunctionNode.params
           : [];
-        const helperArgs = Array.isArray(current.arguments) ? current.arguments : [];
+        const helperArgs = Array.isArray(current.arguments)
+          ? current.arguments
+          : [];
 
         for (let index = 0; index < helperParams.length; index += 1) {
           const param = helperParams[index];
@@ -434,7 +824,8 @@ function collectStateWritesForHandler(
     writes
       .filter(
         (write) =>
-          write.phase === "start" && getBooleanLiteralArgument(write.node) === true,
+          write.phase === "start" &&
+          getBooleanLiteralArgument(write.node) === true,
       )
       .map((write) => write.stateVar),
   );
@@ -450,16 +841,7 @@ function collectStateWritesForHandler(
   return writes;
 }
 
-function getStateIdentifierName(
-  expressionNode: any,
-  stateNames: Set<string>,
-): string | null {
-  if (expressionNode?.type !== "Identifier") return null;
-  if (!stateNames.has(expressionNode.name)) return null;
-  return expressionNode.name;
-}
-
-function collectStateIdentifierNames(
+function collectStateReferenceNames(
   expressionNode: any,
   stateNames: Set<string>,
 ): string[] {
@@ -467,6 +849,19 @@ function collectStateIdentifierNames(
   if (!expressionNode) return [];
 
   walkAst(expressionNode, (current) => {
+    if (
+      current.type === "MemberExpression" &&
+      current.computed === false &&
+      current.object?.type === "Identifier" &&
+      current.property?.type === "Identifier"
+    ) {
+      const memberName = `${current.object.name}.${current.property.name}`;
+      if (stateNames.has(memberName)) {
+        foundStateNames.add(memberName);
+      }
+      return;
+    }
+
     if (current.type !== "Identifier") return;
     if (!stateNames.has(current.name)) return;
 
@@ -499,7 +894,11 @@ function unwrapAssignmentPattern(node: any): any {
 }
 
 function getObjectPatternPropertyKeyName(propertyNode: any): string | null {
-  if (!propertyNode || propertyNode.type !== "Property" || propertyNode.computed) {
+  if (
+    !propertyNode ||
+    propertyNode.type !== "Property" ||
+    propertyNode.computed
+  ) {
     return null;
   }
 
@@ -546,7 +945,10 @@ function collectComponentPropAliases(componentFunctionNode: any): {
 
 function collectPropReferenceNames(
   expressionNode: any,
-  propAliases: { localAliasToPropName: Map<string, string>; propsObjectName?: string },
+  propAliases: {
+    localAliasToPropName: Map<string, string>;
+    propsObjectName?: string;
+  },
 ): string[] {
   const foundPropNames = new Set<string>();
   if (!expressionNode) return [];
@@ -598,10 +1000,9 @@ function isComponentJSXName(name: string | null): name is string {
 
 function collectStatePropPasses(
   componentFunctionNode: any,
-  statePairs: StatePair[],
+  stateNames: Set<string>,
 ): StatePropPass[] {
   const passes: StatePropPass[] = [];
-  const stateNames = new Set(statePairs.map((pair) => pair.stateVar));
 
   if (stateNames.size === 0) return passes;
 
@@ -611,7 +1012,7 @@ function collectStatePropPasses(
       if (current.type !== "JSXAttribute") return;
 
       const expression = current.value?.expression;
-      const stateVars = collectStateIdentifierNames(expression, stateNames);
+      const stateVars = collectStateReferenceNames(expression, stateNames);
       if (stateVars.length === 0) return;
 
       const openingElement = current.parent;
@@ -640,10 +1041,9 @@ function collectStatePropPasses(
 
 function collectVisibleStateReads(
   componentFunctionNode: any,
-  statePairs: StatePair[],
+  stateNames: Set<string>,
 ): StateRead[] {
   const reads: StateRead[] = [];
-  const stateNames = new Set(statePairs.map((pair) => pair.stateVar));
 
   if (stateNames.size === 0) return reads;
 
@@ -652,8 +1052,8 @@ function collectVisibleStateReads(
     (current) => {
       if (current.type === "JSXAttribute") {
         const expression = current.value?.expression;
-        const stateVar = getStateIdentifierName(expression, stateNames);
-        if (!stateVar) return;
+        const stateVars = collectStateReferenceNames(expression, stateNames);
+        if (stateVars.length === 0) return;
 
         const openingElement = current.parent;
         const ownerTagName =
@@ -664,7 +1064,9 @@ function collectVisibleStateReads(
 
         const propName = current.name?.name;
         if (propName === "disabled" && !belongsToComponent) {
-          reads.push({ stateVar, node: current, kind: "disabled-prop" });
+          for (const stateVar of stateVars) {
+            reads.push({ stateVar, node: current, kind: "disabled-prop" });
+          }
           return;
         }
 
@@ -672,51 +1074,60 @@ function collectVisibleStateReads(
           (propName === "loading" || propName === "isLoading") &&
           !belongsToComponent
         ) {
-          reads.push({ stateVar, node: current, kind: "loading-prop" });
+          for (const stateVar of stateVars) {
+            reads.push({ stateVar, node: current, kind: "loading-prop" });
+          }
           return;
         }
 
         return;
       }
 
-      if (
-        current.type === "LogicalExpression" &&
-        current.operator === "&&" &&
-        current.left?.type === "Identifier" &&
-        stateNames.has(current.left.name)
-      ) {
-        reads.push({
-          stateVar: current.left.name,
-          node: current,
-          kind: "conditional-render",
-        });
+      if (current.type === "LogicalExpression" && current.operator === "&&") {
+        const leftStateVars = collectStateReferenceNames(
+          current.left,
+          stateNames,
+        );
+        for (const stateVar of leftStateVars) {
+          reads.push({
+            stateVar,
+            node: current,
+            kind: "conditional-render",
+          });
+        }
         return;
       }
 
-      if (
-        current.type === "ConditionalExpression" &&
-        current.test?.type === "Identifier" &&
-        stateNames.has(current.test.name)
-      ) {
-        reads.push({
-          stateVar: current.test.name,
-          node: current,
-          kind: "ternary-render",
-        });
+      if (current.type === "ConditionalExpression") {
+        const testStateVars = collectStateReferenceNames(
+          current.test,
+          stateNames,
+        );
+        for (const stateVar of testStateVars) {
+          reads.push({
+            stateVar,
+            node: current,
+            kind: "ternary-render",
+          });
+        }
         return;
       }
 
       if (
         current.type === "JSXExpressionContainer" &&
-        current.parent?.type !== "JSXAttribute" &&
-        current.expression?.type === "Identifier" &&
-        stateNames.has(current.expression.name)
+        current.parent?.type !== "JSXAttribute"
       ) {
-        reads.push({
-          stateVar: current.expression.name,
-          node: current,
-          kind: "generic-visible-read",
-        });
+        const expressionStateVars = collectStateReferenceNames(
+          current.expression,
+          stateNames,
+        );
+        for (const stateVar of expressionStateVars) {
+          reads.push({
+            stateVar,
+            node: current,
+            kind: "generic-visible-read",
+          });
+        }
       }
     },
     { skipNestedFunctions: true },
@@ -765,7 +1176,10 @@ function collectVisiblePropReads(componentFunctionNode: any): PropRead[] {
       }
 
       if (current.type === "LogicalExpression" && current.operator === "&&") {
-        const leftPropNames = collectPropReferenceNames(current.left, propAliases);
+        const leftPropNames = collectPropReferenceNames(
+          current.left,
+          propAliases,
+        );
         for (const propName of leftPropNames) {
           reads.push({
             propName,
@@ -774,7 +1188,10 @@ function collectVisiblePropReads(componentFunctionNode: any): PropRead[] {
           });
         }
 
-        const rightPropNames = collectPropReferenceNames(current.right, propAliases);
+        const rightPropNames = collectPropReferenceNames(
+          current.right,
+          propAliases,
+        );
         for (const propName of rightPropNames) {
           reads.push({
             propName,
@@ -786,7 +1203,10 @@ function collectVisiblePropReads(componentFunctionNode: any): PropRead[] {
       }
 
       if (current.type === "ConditionalExpression") {
-        const testPropNames = collectPropReferenceNames(current.test, propAliases);
+        const testPropNames = collectPropReferenceNames(
+          current.test,
+          propAliases,
+        );
         for (const propName of testPropNames) {
           reads.push({
             propName,
@@ -825,7 +1245,10 @@ function collectVisiblePropReads(componentFunctionNode: any): PropRead[] {
         current.type === "JSXExpressionContainer" &&
         current.parent?.type !== "JSXAttribute"
       ) {
-        const propNames = collectPropReferenceNames(current.expression, propAliases);
+        const propNames = collectPropReferenceNames(
+          current.expression,
+          propAliases,
+        );
         for (const propName of propNames) {
           reads.push({
             propName,
@@ -894,6 +1317,7 @@ function resolveInteractionHandlerReference(
   handlersByName: Map<string, InteractionHandler>,
   statePairs: StatePair[],
   helperFunctionsByName: Map<string, any>,
+  externalStatusModel: ExternalStatusModel,
   store: InteractionStore,
 ): {
   handlerId?: string;
@@ -916,7 +1340,9 @@ function resolveInteractionHandlerReference(
     expression.type === "ArrowFunctionExpression" ||
     expression.type === "FunctionExpression"
   ) {
-    const delegatedHandlerName = extractDirectCalledHandlerName(expression.body);
+    const delegatedHandlerName = extractDirectCalledHandlerName(
+      expression.body,
+    );
     if (delegatedHandlerName) {
       const namedHandler = handlersByName.get(delegatedHandlerName);
       if (namedHandler) {
@@ -943,6 +1369,7 @@ function resolveInteractionHandlerReference(
         inlineHandler,
         statePairs,
         helperFunctionsByName,
+        externalStatusModel,
       ),
     };
   }
@@ -955,6 +1382,7 @@ function collectInteractionsAndInlineHandlers(
   statePairs: StatePair[],
   namedHandlersByName: Map<string, InteractionHandler>,
   helperFunctionsByName: Map<string, any>,
+  externalStatusModel: ExternalStatusModel,
   store: InteractionStore,
 ): {
   interactions: Array<{
@@ -994,6 +1422,7 @@ function collectInteractionsAndInlineHandlers(
         namedHandlersByName,
         statePairs,
         helperFunctionsByName,
+        externalStatusModel,
         store,
       );
 
@@ -1041,26 +1470,50 @@ function collectComponentFacts(
     handlerName?: string;
   }>;
 } {
-  const statePairs = collectStatePairsFromFunctionBody(componentFunctionNode.body);
+  const statePairs = collectStatePairsFromFunctionBody(
+    componentFunctionNode.body,
+  );
+  const externalStatusModel = collectExternalStatusModel(componentFunctionNode);
+  const observableStateVars = new Set(
+    statePairs
+      .map((pair) => pair.stateVar)
+      .concat([...externalStatusModel.observableStateVars]),
+  );
   const namedHandlers = collectNamedHandlers(componentFunctionNode, store);
-  const helperFunctionsByName = collectNamedFunctionsInSameFile(componentFunctionNode);
-  const handlersByName = new Map(namedHandlers.map((handler) => [handler.name, handler]));
+  const helperFunctionsByName = collectNamedFunctionsInSameFile(
+    componentFunctionNode,
+  );
+  const handlersByName = new Map(
+    namedHandlers.map((handler) => [handler.name, handler]),
+  );
 
   const stateWrites: StateWrite[] = [];
   for (const handler of namedHandlers) {
     stateWrites.push(
-      ...collectStateWritesForHandler(handler, statePairs, helperFunctionsByName),
+      ...collectStateWritesForHandler(
+        handler,
+        statePairs,
+        helperFunctionsByName,
+        externalStatusModel,
+      ),
     );
   }
 
-  const stateReads = collectVisibleStateReads(componentFunctionNode, statePairs);
+  const stateReads = collectVisibleStateReads(
+    componentFunctionNode,
+    observableStateVars,
+  );
   const propReads = collectVisiblePropReads(componentFunctionNode);
-  const statePropPasses = collectStatePropPasses(componentFunctionNode, statePairs);
+  const statePropPasses = collectStatePropPasses(
+    componentFunctionNode,
+    observableStateVars,
+  );
   const interactionData = collectInteractionsAndInlineHandlers(
     componentFunctionNode,
     statePairs,
     handlersByName,
     helperFunctionsByName,
+    externalStatusModel,
     store,
   );
 
@@ -1081,7 +1534,10 @@ function collectComponentIntoStore(node: any, store: InteractionStore) {
 
   store.ensureComponent(componentInput.componentName);
 
-  const componentFacts = collectComponentFacts(componentInput.functionNode, store);
+  const componentFacts = collectComponentFacts(
+    componentInput.functionNode,
+    store,
+  );
 
   for (const statePair of componentFacts.statePairs) {
     store.addStatePair(componentInput.componentName, statePair);

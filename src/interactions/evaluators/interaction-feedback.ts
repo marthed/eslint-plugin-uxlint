@@ -64,19 +64,25 @@ function resolveInteractionHandler(
   interaction: { handlerId?: string; handlerName?: string },
 ): InteractionHandler | undefined {
   if (interaction.handlerId) {
-    const byId = handlers.find((handler) => handler.id === interaction.handlerId);
+    const byId = handlers.find(
+      (handler) => handler.id === interaction.handlerId,
+    );
     if (byId) return byId;
   }
 
   if (interaction.handlerName) {
-    const byName = handlers.find((handler) => handler.name === interaction.handlerName);
+    const byName = handlers.find(
+      (handler) => handler.name === interaction.handlerName,
+    );
     if (byName) return byName;
   }
 
   return undefined;
 }
 
-function getAsyncPhaseCoverage(phases: InteractionPhase[]): Set<InteractionPhase> {
+function getAsyncPhaseCoverage(
+  phases: InteractionPhase[],
+): Set<InteractionPhase> {
   return new Set<InteractionPhase>(phases);
 }
 
@@ -101,7 +107,9 @@ function hasVisibleChildPropRead(
   if (relevantPasses.length === 0) return false;
 
   for (const statePropPass of relevantPasses) {
-    const childComponent = componentsByName.get(statePropPass.childComponentName);
+    const childComponent = componentsByName.get(
+      statePropPass.childComponentName,
+    );
     if (!childComponent) {
       // Unknown child components may live in other files; treat prop handoff as visible.
       return true;
@@ -129,19 +137,29 @@ export function evaluateInteractionFeedback(
 
   for (const component of components) {
     for (const interaction of component.interactions) {
-      const handler = resolveInteractionHandler(component.handlers, interaction);
+      const handler = resolveInteractionHandler(
+        component.handlers,
+        interaction,
+      );
       if (!handler) continue;
 
       const writesForHandler = component.stateWrites.filter(
         (stateWrite) => stateWrite.handlerId === handler.id,
       );
+      const isAsyncInteraction =
+        handler.isAsync ||
+        writesForHandler.some((stateWrite) => stateWrite.phase !== "sync");
       const visibleWrites = writesForHandler.filter(
         (stateWrite) =>
           hasDirectVisibleStateRead(component, stateWrite.stateVar) ||
-          hasVisibleChildPropRead(component, stateWrite.stateVar, componentsByName),
+          hasVisibleChildPropRead(
+            component,
+            stateWrite.stateVar,
+            componentsByName,
+          ),
       );
 
-      if (!handler.isAsync) {
+      if (!isAsyncInteraction) {
         if (visibleWrites.length > 0) continue;
         findings.push({
           node: interaction.node,

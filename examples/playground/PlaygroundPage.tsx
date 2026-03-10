@@ -53,6 +53,24 @@ export function PlaygroundPage() {
       />
 
       <CaseRow
+        title="Stage 4: React Query adapter (INTERACTION-ASYNC-SUCCESS-001)"
+        bad={<ReactQueryMissingSuccess />}
+        good={<ReactQueryAllPhasesVisible />}
+      />
+
+      <CaseRow
+        title="Stage 4: Redux adapter (INTERACTION-ASYNC-ERROR-001)"
+        bad={<ReduxMissingErrorFeedback />}
+        good={<ReduxAllPhasesVisible />}
+      />
+
+      <CaseRow
+        title="Stage 4: Zustand adapter (INTERACTION-ASYNC-START-001 / INTERACTION-ASYNC-SETTLED-001)"
+        bad={<ZustandMissingPendingFeedback />}
+        good={<ZustandAllPhasesVisible />}
+      />
+
+      <CaseRow
         title="Placeholder-only label (FORM-001)"
         bad={<input placeholder="Email" />}
         good={
@@ -453,6 +471,205 @@ function AsyncChildLoadingVisible() {
 
 function SaveFeedbackBadgeGood({ loading }: { loading: boolean }) {
   return <div>{loading ? "Saving..." : "Idle"}</div>;
+}
+
+type MutationStatus = "idle" | "pending" | "success" | "error";
+
+function useMutation({ mutationFn }: { mutationFn: () => Promise<unknown> }) {
+  const [status, setStatus] = React.useState<MutationStatus>("idle");
+
+  function mutate() {
+    setStatus("pending");
+    void mutationFn()
+      .then(() => {
+        setStatus("success");
+      })
+      .catch(() => {
+        setStatus("error");
+      });
+  }
+
+  async function mutateAsync() {
+    mutate();
+  }
+
+  return {
+    mutate,
+    mutateAsync,
+    isPending: status === "pending",
+    isError: status === "error",
+    isSuccess: status === "success",
+    status,
+    error: status === "error" ? new Error("Request failed") : null,
+  };
+}
+
+type ReduxState = {
+  profile: {
+    isSaving: boolean;
+    saveError: string;
+    saveSuccess: boolean;
+  };
+};
+
+const MOCK_REDUX_STATE: ReduxState = {
+  profile: {
+    isSaving: false,
+    saveError: "",
+    saveSuccess: true,
+  },
+};
+
+function useDispatch() {
+  return (_action: unknown) => undefined;
+}
+
+function useSelector<T>(selector: (state: ReduxState) => T): T {
+  return selector(MOCK_REDUX_STATE);
+}
+
+type AppStore = {
+  saveProfile: () => void;
+  isSaving: boolean;
+  saveError: string;
+  isSuccess: boolean;
+};
+
+const MOCK_APP_STORE: AppStore = {
+  saveProfile: () => undefined,
+  isSaving: false,
+  saveError: "",
+  isSuccess: true,
+};
+
+function useAppStore<T>(selector: (store: AppStore) => T): T {
+  return selector(MOCK_APP_STORE);
+}
+
+function saveProfile() {
+  return { type: "profile/save" };
+}
+
+function ReactQueryAllPhasesVisible() {
+  const { mutate, isPending, isError, isSuccess } = useMutation({
+    mutationFn: fakeSave,
+  });
+
+  function handleSave() {
+    mutate();
+  }
+
+  return (
+    <div>
+      <button type="button" onClick={handleSave} disabled={isPending}>
+        Save
+      </button>
+      <div>{isError && "Failed"}</div>
+      <div>{isSuccess && "Saved"}</div>
+    </div>
+  );
+}
+
+function ReactQueryMissingSuccess() {
+  const saveMutation = useMutation({ mutationFn: fakeSave });
+
+  function handleSave() {
+    saveMutation.mutate();
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={saveMutation.isPending}
+      >
+        Save
+      </button>
+      <div>{saveMutation.isError && "Failed"}</div>
+    </div>
+  );
+}
+
+function ReduxAllPhasesVisible() {
+  const dispatch = useDispatch();
+  const isSaving = useSelector((state) => state.profile.isSaving);
+  const saveError = useSelector((state) => state.profile.saveError);
+  const saveSuccess = useSelector((state) => state.profile.saveSuccess);
+
+  function handleSave() {
+    dispatch(saveProfile());
+  }
+
+  return (
+    <div>
+      <button type="button" onClick={handleSave} disabled={isSaving}>
+        Save
+      </button>
+      <div>{saveError && "Failed"}</div>
+      <div>{saveSuccess && "Saved"}</div>
+    </div>
+  );
+}
+
+function ReduxMissingErrorFeedback() {
+  const dispatch = useDispatch();
+  const isSaving = useSelector((state) => state.profile.isSaving);
+  const saveSuccess = useSelector((state) => state.profile.saveSuccess);
+
+  function handleSave() {
+    dispatch(saveProfile());
+  }
+
+  return (
+    <div>
+      <button type="button" onClick={handleSave} disabled={isSaving}>
+        Save
+      </button>
+      <div>{saveSuccess && "Saved"}</div>
+    </div>
+  );
+}
+
+function ZustandAllPhasesVisible() {
+  const saveProfile = useAppStore((store) => store.saveProfile);
+  const isSaving = useAppStore((store) => store.isSaving);
+  const saveError = useAppStore((store) => store.saveError);
+  const isSuccess = useAppStore((store) => store.isSuccess);
+
+  function handleSave() {
+    saveProfile();
+  }
+
+  return (
+    <div>
+      <button type="button" onClick={handleSave} disabled={isSaving}>
+        Save
+      </button>
+      <div>{saveError && "Failed"}</div>
+      <div>{isSuccess && "Saved"}</div>
+    </div>
+  );
+}
+
+function ZustandMissingPendingFeedback() {
+  const saveProfile = useAppStore((store) => store.saveProfile);
+  const saveError = useAppStore((store) => store.saveError);
+  const isSuccess = useAppStore((store) => store.isSuccess);
+
+  function handleSave() {
+    saveProfile();
+  }
+
+  return (
+    <div>
+      <button type="button" onClick={handleSave}>
+        Save
+      </button>
+      <div>{saveError && "Failed"}</div>
+      <div>{isSuccess && "Saved"}</div>
+    </div>
+  );
 }
 
 async function fakeSave(shouldFail = false, timeoutMs = 500) {
