@@ -292,6 +292,18 @@ function classifyStateWritePhase(
   return "start";
 }
 
+function getBooleanLiteralArgument(callExpressionNode: any): boolean | null {
+  const firstArgument = callExpressionNode?.arguments?.[0];
+  if (
+    firstArgument?.type === "Literal" &&
+    typeof firstArgument.value === "boolean"
+  ) {
+    return firstArgument.value;
+  }
+
+  return null;
+}
+
 function collectStateWritesForHandler(
   handler: InteractionHandler,
   statePairs: StatePair[],
@@ -321,6 +333,27 @@ function collectStateWritesForHandler(
     },
     { skipNestedFunctions: true },
   );
+
+  if (!handler.isAsync) return writes;
+
+  // Treat post-await writes that clear a pending flag as settled feedback
+  // when the same state var was set to true in start.
+  const startPendingStateVars = new Set(
+    writes
+      .filter(
+        (write) =>
+          write.phase === "start" && getBooleanLiteralArgument(write.node) === true,
+      )
+      .map((write) => write.stateVar),
+  );
+
+  for (const write of writes) {
+    if (write.phase !== "success") continue;
+    if (!startPendingStateVars.has(write.stateVar)) continue;
+    if (getBooleanLiteralArgument(write.node) !== false) continue;
+
+    write.phase = "settled";
+  }
 
   return writes;
 }

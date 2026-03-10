@@ -35,25 +35,19 @@ export function PlaygroundPage() {
       />
 
       <CaseRow
-        title="Async warnings: missing error + settled"
+        title="Async warning: missing error (INTERACTION-ASYNC-ERROR-001)"
         bad={<AsyncMissingError />}
         good={<AsyncErrorVisible />}
       />
 
       <CaseRow
-        title="Async warnings: missing success + settled"
+        title="Async warning: missing success (INTERACTION-ASYNC-SUCCESS-001)"
         bad={<AsyncMissingSuccess />}
         good={<AsyncAllPhasesVisible />}
       />
 
       <CaseRow
-        title="Async warnings: no visible feedback (all async phase warnings)"
-        bad={<AsyncNoVisibleFeedback />}
-        good={<AsyncAllPhasesVisible />}
-      />
-
-      <CaseRow
-        title="Placeholder-only label"
+        title="Placeholder-only label (FORM-001)"
         bad={<input placeholder="Email" />}
         good={
           <>
@@ -69,61 +63,19 @@ export function PlaygroundPage() {
       />
 
       <CaseRow
-        title="Button type"
+        title="Button type (BTN-001)"
         bad={<button>Save</button>}
         good={<button type="button">Save</button>}
       />
 
       <CaseRow
-        title="Image alt text"
+        title="Image alt text (IMG-001)"
         bad={<img src="/placeholder.svg" />}
         good={<img src="/placeholder.svg" alt="Placeholder logo" />}
       />
 
       <CaseRow
-        title="Native form error state"
-        bad={
-          <form style={{ display: "grid", gap: 8 }}>
-            <input name="email" type="email" placeholder="Email" />
-            <button type="submit">Submit</button>
-          </form>
-        }
-        good={
-          <form style={{ display: "grid", gap: 8 }}>
-            <label htmlFor="native-email">Email</label>
-            <input
-              id="native-email"
-              name="email"
-              type="email"
-              aria-invalid="true"
-              aria-describedby="native-email-error"
-            />
-            <div id="native-email-error" role="alert">
-              Please enter a valid email address.
-            </div>
-            <button type="submit">Submit</button>
-          </form>
-        }
-      />
-
-      <CaseRow
-        title="Design-system form error state"
-        bad={
-          <Form style={{ display: "grid", gap: 8 }}>
-            <TextField name="email" />
-            <SubmitButton />
-          </Form>
-        }
-        good={
-          <Form style={{ display: "grid", gap: 8 }}>
-            <TextField name="email" error="Email is required" />
-            <SubmitButton type="submit" />
-          </Form>
-        }
-      />
-
-      <CaseRow
-        title="Icon button label"
+        title="Icon button label (ICON-001)"
         bad={<IconButton />}
         good={<IconButton aria-label="Open menu" />}
       />
@@ -190,45 +142,10 @@ function CaseColumn({
   );
 }
 
-function Form(props: any) {
-  return <div {...props} />;
-}
-
-function TextField(props: any) {
-  return <input {...props} />;
-}
-
-function SubmitButton(props: any) {
-  return (
-    <button type="submit" {...props}>
-      Submit
-    </button>
-  );
-}
-
 function IconButton(props: any) {
   return (
     <button type="button" {...props}>
       ☆
-    </button>
-  );
-}
-
-function AsyncNoVisibleFeedback() {
-  const [isSaving, setIsSaving] = React.useState(false);
-
-  async function handleSave() {
-    setIsSaving(true);
-    try {
-      await fakeSave();
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  return (
-    <button type="button" onClick={handleSave}>
-      Save
     </button>
   );
 }
@@ -241,7 +158,7 @@ function SyncNoVisibleFeedback() {
   }
 
   return (
-    <button type="button" onClick={handleToggle}>
+    <button type="button" onClick={handleToggle} style={{ justifySelf: "start" }}>
       Toggle
     </button>
   );
@@ -274,7 +191,7 @@ function AsyncAllPhasesVisible() {
     setDidSave(false);
     setDidFail(false);
     try {
-      await fakeSave();
+      await fakeSave(false, 2000);
       setDidSave(true);
     } catch {
       setDidFail(true);
@@ -288,8 +205,14 @@ function AsyncAllPhasesVisible() {
       <button type="button" onClick={handleSave} disabled={isSaving}>
         Save
       </button>
-      <div>{didSave && "Saved"}</div>
-      <div>{didFail && "Failed"}</div>
+      {isSaving ? (
+        <div>Loading...</div>
+      ) : (
+        <>
+          <div>{didSave && "Saved"}</div>
+          <div>{didFail && "Failed"}</div>
+        </>
+      )}
     </div>
   );
 }
@@ -297,11 +220,14 @@ function AsyncAllPhasesVisible() {
 function AsyncMissingStart() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [didSave, setDidSave] = React.useState(false);
+  const [didFail, setDidFail] = React.useState(false);
 
   async function handleSave() {
     try {
-      await fakeSave();
+      await fakeSave(false, 2000);
       setDidSave(true);
+    } catch {
+      setDidFail(true);
     } finally {
       setIsSaving(false);
     }
@@ -312,7 +238,14 @@ function AsyncMissingStart() {
       <button type="button" onClick={handleSave} disabled={isSaving}>
         Save
       </button>
-      <div>{didSave && "Saved"}</div>
+      {isSaving ? (
+        <div>Loading...</div>
+      ) : (
+        <>
+          <div>{didSave && "Saved"}</div>
+          <div>{didFail && "Failed"}</div>
+        </>
+      )}
     </div>
   );
 }
@@ -339,8 +272,14 @@ function AsyncMissingSettled() {
       <button type="button" onClick={handleSave} disabled={isSaving}>
         Save
       </button>
-      <div>{didSave && "Saved"}</div>
-      <div>{didFail && "Failed"}</div>
+      {isSaving ? (
+        <div>Loading...</div>
+      ) : (
+        <>
+          <div>{didSave && "Saved"}</div>
+          <div>{didFail && "Failed"}</div>
+        </>
+      )}
     </div>
   );
 }
@@ -352,11 +291,10 @@ function AsyncMissingError() {
   async function handleSave() {
     setIsSaving(true);
     try {
-      await fakeSave();
+      await fakeSave(true);
       setDidSave(true);
-      throw new Error("Save failed");
-    } catch {
-      // Intentionally no visible error feedback in this example.
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -365,7 +303,13 @@ function AsyncMissingError() {
       <button type="button" onClick={handleSave} disabled={isSaving}>
         Save
       </button>
-      <div>{didSave && "Saved"}</div>
+      {isSaving ? (
+        <div>Loading...</div>
+      ) : (
+        <>
+          <div>{didSave && "Saved"}</div>
+        </>
+      )}
     </div>
   );
 }
@@ -373,13 +317,14 @@ function AsyncMissingError() {
 function AsyncErrorVisible() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [didFail, setDidFail] = React.useState(false);
+  const [didSave, setDidSave] = React.useState(false);
 
   async function handleSave() {
     setIsSaving(true);
     setDidFail(false);
     try {
-      await fakeSave();
-      throw new Error("Save failed");
+      await fakeSave(true);
+      setDidSave(true);
     } catch {
       setDidFail(true);
     } finally {
@@ -392,7 +337,14 @@ function AsyncErrorVisible() {
       <button type="button" onClick={handleSave} disabled={isSaving}>
         Save
       </button>
-      <div>{didFail && "Failed"}</div>
+      {isSaving ? (
+        <div>Loading...</div>
+      ) : (
+        <>
+          <div>{didSave && "Saved"}</div>
+          <div>{didFail && "Failed"}</div>
+        </>
+      )}
     </div>
   );
 }
@@ -408,6 +360,7 @@ function AsyncMissingSuccess() {
     } catch {
       setDidFail(true);
     }
+    setIsSaving(false);
   }
 
   return (
@@ -415,15 +368,25 @@ function AsyncMissingSuccess() {
       <button type="button" onClick={handleSave} disabled={isSaving}>
         Save
       </button>
-      <div>{didFail && "Failed"}</div>
+      {isSaving ? (
+        <div>Loading...</div>
+      ) : (
+        <>
+          <div>{didFail && "Failed"}</div>
+        </>
+      )}
     </div>
   );
 }
 
-async function fakeSave() {
-  return new Promise((resolve) => {
+async function fakeSave(shouldFail = false, timeoutMs = 500) {
+  return new Promise((resolve, reject) => {
     setTimeout(() => {
+      if (shouldFail) {
+        reject(new Error("Save failed"));
+        return;
+      }
       resolve(true);
-    }, 500);
+    }, timeoutMs);
   });
 }

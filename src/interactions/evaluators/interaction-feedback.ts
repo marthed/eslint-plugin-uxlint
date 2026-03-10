@@ -64,19 +64,7 @@ function resolveInteractionHandler(
 }
 
 function getAsyncPhaseCoverage(phases: InteractionPhase[]): Set<InteractionPhase> {
-  const coverage = new Set<InteractionPhase>();
-
-  for (const phase of phases) {
-    coverage.add(phase);
-
-    // In loose feedback mode, a settled/finally update counts as outcome feedback.
-    if (phase === "settled") {
-      coverage.add("success");
-      coverage.add("error");
-    }
-  }
-
-  return coverage;
+  return new Set<InteractionPhase>(phases);
 }
 
 export function evaluateInteractionFeedback(
