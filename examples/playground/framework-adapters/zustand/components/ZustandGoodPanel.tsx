@@ -1,7 +1,12 @@
 import { ZustandActionButtons } from "./ZustandActionButtons";
+import { ZustandGoodStatus } from "./ZustandGoodStatus";
 import { useGoodProfileStore } from "../store/profileStore";
 
 export function ZustandGoodPanel() {
+  return <ZustandGoodActions />;
+}
+
+function ZustandGoodActions() {
   const saveProfile = useGoodProfileStore((store) => store.saveProfile);
   const isSaving = useGoodProfileStore((store) => store.isSaving);
   const saveError = useGoodProfileStore((store) => store.saveError);
@@ -22,10 +27,11 @@ export function ZustandGoodPanel() {
         onSaveSuccess={handleSaveSuccess}
         onSaveFailure={handleSaveFailure}
       />
-
-      <div>{isSaving ? "Saving..." : ""}</div>
-      <div>{saveError && "Failed"}</div>
-      <div>{isSuccess && "Saved"}</div>
+      <ZustandGoodStatus
+        isSaving={isSaving}
+        saveError={saveError}
+        isSuccess={isSuccess}
+      />
     </div>
   );
 }

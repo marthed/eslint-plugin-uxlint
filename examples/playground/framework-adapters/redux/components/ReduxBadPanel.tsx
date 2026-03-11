@@ -1,9 +1,14 @@
 import { useDispatch, useSelector } from "react-redux";
 import { ReduxActionButtons } from "./ReduxActionButtons";
+import { ReduxBadStatus } from "./ReduxBadStatus";
 import { saveProfile } from "../state/profileSlice";
 import type { AppDispatch, RootState } from "../state/store";
 
 export function ReduxBadPanel() {
+  return <ReduxBadActions />;
+}
+
+function ReduxBadActions() {
   const dispatch = useDispatch<AppDispatch>();
   const isSaving = useSelector((state: RootState) => state.profile.isSaving);
   const saveSuccess = useSelector(
@@ -25,8 +30,7 @@ export function ReduxBadPanel() {
         onSaveSuccess={handleSaveSuccess}
         onSaveFailure={handleSaveFailure}
       />
-
-      <div>{saveSuccess && "Saved"}</div>
+      <ReduxBadStatus saveSuccess={saveSuccess} />
     </div>
   );
 }

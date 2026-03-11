@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { MutationButtons } from "./MutationButtons";
+import { ReactQueryBadStatus } from "./ReactQueryBadStatus";
 import { saveProfile } from "../services/saveProfile";
 
 export function ReactQueryBadPanel() {
@@ -17,15 +18,44 @@ export function ReactQueryBadPanel() {
   }
 
   return (
+    <ReactQueryBadActions
+      isPending={saveMutation.isPending}
+      isError={saveMutation.isError}
+      onSaveSuccess={handleSaveSuccess}
+      onSaveFailure={handleSaveFailure}
+    />
+  );
+}
+
+type ReactQueryBadActionsProps = {
+  isPending: boolean;
+  isError: boolean;
+  onSaveSuccess: () => void;
+  onSaveFailure: () => void;
+};
+
+function ReactQueryBadActions({
+  isPending,
+  isError,
+  onSaveSuccess,
+  onSaveFailure,
+}: ReactQueryBadActionsProps) {
+  function handleSaveSuccess() {
+    onSaveSuccess();
+  }
+
+  function handleSaveFailure() {
+    onSaveFailure();
+  }
+
+  return (
     <div style={{ display: "grid", gap: 8 }}>
       <MutationButtons
-        disabled={saveMutation.isPending}
+        disabled={isPending}
         onSaveSuccess={handleSaveSuccess}
         onSaveFailure={handleSaveFailure}
       />
-
-      <div>{saveMutation.isPending ? "Saving..." : ""}</div>
-      <div>{saveMutation.isError && "Failed"}</div>
+      <ReactQueryBadStatus isPending={isPending} isError={isError} />
     </div>
   );
 }
