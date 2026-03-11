@@ -1,11 +1,41 @@
 {
   "name": "eslint-plugin-uxlint",
+  "description": "Customizable UX heuristic linting for web applications.",
   "version": "0.0.1",
   "main": "dist/index.js",
+  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marthed/eslint-plugin-uxlint.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/marthed/eslint-plugin-uxlint/issues"
+  },
+  "homepage": "https://github.com/marthed/eslint-plugin-uxlint#readme",
+  "keywords": [
+    "eslint",
+    "eslint-plugin",
+    "ux",
+    "lint",
+    "static-analysis"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "prepublishOnly": "npm test && npm run build",
     "test": "node --import tsx --test tests/*.test.ts",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
@@ -26,5 +56,8 @@
     "tsup": "^8.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0"
   }
 }
