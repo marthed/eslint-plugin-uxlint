@@ -11,9 +11,13 @@
     "lint:watch": "chokidar '../../src/**/*' -c 'npm run lint'"
   },
   "dependencies": {
+    "@reduxjs/toolkit": "^2.9.0",
+    "@tanstack/react-query": "^5.90.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.9.4"
+    "react-redux": "^9.2.0",
+    "react-router-dom": "^7.9.4",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
