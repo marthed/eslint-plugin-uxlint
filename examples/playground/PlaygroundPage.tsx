@@ -71,19 +71,27 @@ export function PlaygroundPage() {
       />
 
       <CaseRow
-        title="Placeholder-only label (FORM-001)"
-        bad={<input placeholder="Email" />}
-        good={
-          <>
-            <label htmlFor="good-email">Email</label>
-            <input
-              id="good-email"
-              name="email"
-              type="email"
-              autoComplete="email"
-            />
-          </>
-        }
+        title="Radio groups need a default or neutral option (INPUT-CHOICE-004)"
+        bad={<RadioGroupWithoutDefault />}
+        good={<RadioGroupWithNeutralOption />}
+      />
+
+      <CaseRow
+        title="Checkbox/radio labels must be associated (INPUT-CHOICE-005)"
+        bad={<UnlabeledChoiceControls />}
+        good={<LabeledChoiceControls />}
+      />
+
+      <CaseRow
+        title="Placeholder text should not be the primary label (INPUT-MOBILE-001)"
+        bad={<PlaceholderOnlyField />}
+        good={<FieldWithExternalLabel />}
+      />
+
+      <CaseRow
+        title="Avoid split month/day/year dropdowns (INPUT-DATE-001)"
+        bad={<SplitDateDropdowns />}
+        good={<NativeDateField />}
       />
 
       <CaseRow
@@ -171,6 +179,131 @@ function IconButton(props: any) {
     <button type="button" {...props}>
       ☆
     </button>
+  );
+}
+
+function RadioGroupWithoutDefault() {
+  return (
+    <form style={{ display: "grid", gap: 8 }}>
+      <div>Preferred contact</div>
+      <label htmlFor="contact-email">Email</label>
+      <input
+        id="contact-email"
+        type="radio"
+        name="contactMethod"
+        value="email"
+      />
+      <label htmlFor="contact-phone">Phone</label>
+      <input
+        id="contact-phone"
+        type="radio"
+        name="contactMethod"
+        value="phone"
+      />
+    </form>
+  );
+}
+
+function RadioGroupWithNeutralOption() {
+  return (
+    <form style={{ display: "grid", gap: 8 }}>
+      <div>Preferred contact</div>
+      <label htmlFor="contact-any">No preference</label>
+      <input
+        id="contact-any"
+        type="radio"
+        name="contactPreference"
+        value="none"
+      />
+      <label htmlFor="contact-email-good">Email</label>
+      <input
+        id="contact-email-good"
+        type="radio"
+        name="contactPreference"
+        value="email"
+      />
+      <label htmlFor="contact-phone-good">Phone</label>
+      <input
+        id="contact-phone-good"
+        type="radio"
+        name="contactPreference"
+        value="phone"
+      />
+    </form>
+  );
+}
+
+function UnlabeledChoiceControls() {
+  return (
+    <form style={{ display: "grid", gap: 8 }}>
+      <input type="checkbox" name="updates" />
+      <input type="radio" name="contactChannel" value="email" />
+    </form>
+  );
+}
+
+function LabeledChoiceControls() {
+  return (
+    <form style={{ display: "grid", gap: 8 }}>
+      <label>
+        <input type="checkbox" name="updates" />
+        Receive product updates
+      </label>
+      <label>
+        <input type="radio" name="contactChannel" value="email" />
+        Email me
+      </label>
+    </form>
+  );
+}
+
+function PlaceholderOnlyField() {
+  return <input type="email" name="email" placeholder="Email" />;
+}
+
+function FieldWithExternalLabel() {
+  return (
+    <>
+      <label htmlFor="good-email">Email</label>
+      <input
+        id="good-email"
+        name="email"
+        type="email"
+        autoComplete="email"
+        placeholder="name@example.com"
+      />
+    </>
+  );
+}
+
+function SplitDateDropdowns() {
+  return (
+    <form style={{ display: "grid", gap: 8 }}>
+      <label htmlFor="birth-month">Birth month</label>
+      <select id="birth-month" name="birthMonth" defaultValue="">
+        <option value="">Month</option>
+        <option value="01">January</option>
+      </select>
+      <label htmlFor="birth-day">Birth day</label>
+      <select id="birth-day" name="birthDay" defaultValue="">
+        <option value="">Day</option>
+        <option value="01">1</option>
+      </select>
+      <label htmlFor="birth-year">Birth year</label>
+      <select id="birth-year" name="birthYear" defaultValue="">
+        <option value="">Year</option>
+        <option value="2026">2026</option>
+      </select>
+    </form>
+  );
+}
+
+function NativeDateField() {
+  return (
+    <form style={{ display: "grid", gap: 8 }}>
+      <label htmlFor="birth-date">Birth date</label>
+      <input id="birth-date" type="date" name="birthDate" />
+    </form>
   );
 }
 

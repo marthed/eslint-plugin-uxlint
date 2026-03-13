@@ -6,6 +6,40 @@ export type NormalizedSubmitControl = {
   kind: "native-submit" | "button-submit" | "submit-component" | "unknown";
 };
 
+export type NormalizedInputControl = {
+  node: any;
+  kind:
+    | "text-input"
+    | "textarea"
+    | "checkbox"
+    | "radio"
+    | "select"
+    | "design-system-field"
+    | "design-system-select";
+  componentName?: string;
+  inputType?: string;
+  formId?: string;
+  containerKey?: string;
+  name?: string;
+  id?: string;
+  value?: string;
+  placeholder?: string;
+  labelProp?: string;
+  ariaLabel?: string;
+  ariaLabelledBy?: string;
+  wrappingLabelText?: string;
+  isWrappedByLabel: boolean;
+  isDefaultSelected: boolean;
+};
+
+export type NormalizedLabel = {
+  node: any;
+  id?: string;
+  htmlFor?: string;
+  text: string;
+  formId?: string;
+};
+
 export type NormalizedField = {
   node: any;
   name?: string;

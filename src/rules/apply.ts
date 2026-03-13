@@ -6,6 +6,8 @@ import { evalExpr, type Expr } from "../shared/dsl";
 import { MultiNodeFactStore } from "../multi/fact-store";
 import { createJSXFormCollector } from "../multi/collectors/jsx-forms";
 import { evaluateFormHasSubmitButNoErrorState } from "../multi/evaluators/form-submit-without-error";
+import { createJSXInputControlsCollector } from "../multi/collectors/jsx-input-controls";
+import { evaluateInputControls } from "../multi/evaluators/input-controls";
 import { createComponentStateCollector } from "../interactions/collectors/component-state";
 import { evaluateInteractionFeedback } from "../interactions/evaluators/interaction-feedback";
 import { InteractionStore } from "../interactions/store";
@@ -33,6 +35,10 @@ const rule: Rule.RuleModule = {
 
     const store = new MultiNodeFactStore(filename);
     const jsxCollector = createJSXFormCollector(store, projectConfig);
+    const inputControlsCollector = createJSXInputControlsCollector(
+      store,
+      projectConfig,
+    );
 
     const interactionStore = new InteractionStore();
 
@@ -73,6 +79,7 @@ const rule: Rule.RuleModule = {
 
       JSXElement(node: any) {
         jsxCollector.JSXElement(node);
+        inputControlsCollector.JSXElement(node);
       },
 
       "JSXElement:exit"(node: any) {
@@ -92,6 +99,18 @@ const rule: Rule.RuleModule = {
           store.getForms(),
         );
         for (const finding of multiNodeFindings) {
+          context.report({
+            node: finding.node,
+            messageId: "uxFinding",
+            data: { message: finding.message },
+          });
+        }
+
+        const inputControlFindings = evaluateInputControls(
+          store.getInputControls(),
+          store.getLabels(),
+        );
+        for (const finding of inputControlFindings) {
           context.report({
             node: finding.node,
             messageId: "uxFinding",

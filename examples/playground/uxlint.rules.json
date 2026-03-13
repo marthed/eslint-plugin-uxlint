@@ -12,22 +12,6 @@
   },
   "rules": [
     {
-      "id": "FORM-001",
-      "title": "Avoid placeholder-only labels",
-      "severity": "warn",
-      "appliesTo": ["JSXOpeningElement"],
-      "when": {
-        "all": [
-          { "in": ["jsx.tag", ["input", "textarea", "select"]] },
-          { "hasAttr": "placeholder" },
-          { "not": { "hasAnyAttr": ["aria-label", "aria-labelledby"] } }
-        ]
-      },
-      "report": {
-        "message": "Avoid placeholder-only labels. Provide a visible label or an accessible name."
-      }
-    },
-    {
       "id": "BTN-001",
       "title": "Buttons should explicitly set type",
       "severity": "warn",
@@ -48,10 +32,7 @@
       "severity": "warn",
       "appliesTo": ["JSXOpeningElement"],
       "when": {
-        "all": [
-          { "eq": ["jsx.tag", "img"] },
-          { "not": { "hasAttr": "alt" } }
-        ]
+        "all": [{ "eq": ["jsx.tag", "img"] }, { "not": { "hasAttr": "alt" } }]
       },
       "report": {
         "message": "<img> must have alt text."
@@ -65,7 +46,11 @@
       "when": {
         "all": [
           { "in": ["jsx.componentName", ["IconButton", "IconOnlyButton"]] },
-          { "not": { "hasAnyAttr": ["aria-label", "aria-labelledby", "label", "title"] } }
+          {
+            "not": {
+              "hasAnyAttr": ["aria-label", "aria-labelledby", "label", "title"]
+            }
+          }
         ]
       },
       "report": {
