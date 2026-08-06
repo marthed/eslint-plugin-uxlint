@@ -55,7 +55,7 @@ function writeProjectFiles(
 }
 
 function withTemporaryProject<T>(
-  uxlintFile: HeuristicFile,
+  uxlintFileContent: string,
   files: Record<string, string>,
   run: (tempDir: string) => T,
 ): T {
@@ -65,7 +65,7 @@ function withTemporaryProject<T>(
   try {
     fs.writeFileSync(
       path.join(tempDir, "uxlint.rules.json"),
-      JSON.stringify(uxlintFile),
+      uxlintFileContent,
       "utf8",
     );
     writeProjectFiles(tempDir, files);
@@ -82,6 +82,7 @@ export function lintWithApplyRule(
   options?: {
     filename?: string;
     uxlintFile?: HeuristicFile;
+    uxlintFileRaw?: string;
   },
 ) {
   const entryFilePath = options?.filename ?? "test.tsx";
@@ -92,6 +93,7 @@ export function lintWithApplyRule(
       [entryFilePath]: code,
     },
     uxlintFile: options?.uxlintFile,
+    uxlintFileRaw: options?.uxlintFileRaw,
   });
 }
 
@@ -99,24 +101,21 @@ export function lintProjectWithApplyRule(options: {
   entryFilePath: string;
   files: Record<string, string>;
   uxlintFile?: HeuristicFile;
+  uxlintFileRaw?: string;
 }) {
-  const linter = new Linter();
+  const uxlintFileContent =
+    options.uxlintFileRaw ??
+    JSON.stringify(options.uxlintFile ?? EMPTY_UXLINT_FILE);
 
-  return withTemporaryProject(
-    options.uxlintFile ?? EMPTY_UXLINT_FILE,
-    options.files,
-    (tempDir) => {
-      const entryFileAbsolutePath = path.resolve(
-        tempDir,
-        options.entryFilePath,
-      );
-      const entryCode = fs.readFileSync(entryFileAbsolutePath, "utf8");
+  return withTemporaryProject(uxlintFileContent, options.files, (tempDir) => {
+    const linter = new Linter({ cwd: tempDir });
+    const entryFileAbsolutePath = path.resolve(tempDir, options.entryFilePath);
+    const entryCode = fs.readFileSync(entryFileAbsolutePath, "utf8");
 
-      return linter.verify(entryCode, createApplyRuleConfig(), {
-        filename: options.entryFilePath,
-      });
-    },
-  );
+    return linter.verify(entryCode, createApplyRuleConfig(), {
+      filename: options.entryFilePath,
+    });
+  });
 }
 
 export function warningIds(messages: Array<{ message: string }>): string[] {

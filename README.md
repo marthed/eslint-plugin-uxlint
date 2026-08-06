@@ -20,7 +20,7 @@ Install the plugin:
 
 ```bash
 npm install eslint-plugin-uxlint --save-dev
-````
+```
 
 or
 
@@ -46,17 +46,60 @@ export default [
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        ecmaFeatures: { jsx: true }
-      }
+        ecmaFeatures: { jsx: true },
+      },
     },
     plugins: {
-      uxlint
+      uxlint,
     },
     rules: {
-      "uxlint/apply": "warn"
-    }
-  }
+      "uxlint/apply": "warn",
+    },
+  },
 ];
+```
+
+---
+
+# Built-in Rules
+
+Besides the JSON DSL, `uxlint/apply` ships built-in rule packs that analyze
+interaction feedback and input controls:
+
+- **Interaction feedback** (`INTERACTION-SYNC-001`, `INTERACTION-ASYNC-START-001`,
+  `INTERACTION-ASYNC-SETTLED-001`, `INTERACTION-ASYNC-ERROR-001`,
+  `INTERACTION-ASYNC-SUCCESS-001`) — traces user interactions (`onClick`,
+  `onSubmit`, `onPress`) through handlers and state writes, across components
+  and files, and reports when no visible UI feedback is detectable for the
+  interaction or for an async phase (pending, settled, error, success). Common
+  React Query, Redux, and Zustand status patterns are recognized.
+- **Form feedback** (`FORM-MULTI-001`) — a form with a submit control should
+  also expose a detectable error path.
+- **Input controls** (`INPUT-CHOICE-004`, `INPUT-CHOICE-005`,
+  `INPUT-MOBILE-001`, `INPUT-DATE-001`) — structural checks on radio groups,
+  checkbox/radio label association, placeholder-as-label, and split
+  month/day/year date dropdowns.
+
+See [docs/built-in-rule-reference.md](docs/built-in-rule-reference.md) for the
+full reference, and [docs/uxlint-direction.md](docs/uxlint-direction.md) for the
+project direction.
+
+Built-in rules can recognize your design-system components through
+`config.designSystem` in `uxlint.rules.json`:
+
+```json
+{
+  "version": 1,
+  "config": {
+    "designSystem": {
+      "formComponents": ["AppForm"],
+      "submitComponents": ["PrimaryButton"],
+      "fieldComponents": ["TextField", "SelectField"],
+      "errorComponents": ["InlineError"]
+    }
+  },
+  "rules": []
+}
 ```
 
 ---
@@ -70,6 +113,9 @@ uxlint.rules.json
 ```
 
 placed in your project root.
+
+If the file cannot be parsed, `uxlint/apply` reports `UXLINT-CONFIG-001` on each
+linted file instead of silently disabling your rules.
 
 Example:
 
@@ -105,15 +151,15 @@ Each rule has the following structure:
 
 ```typescript
 type Heuristic = {
-  id: string
-  title: string
-  severity: "off" | "warn" | "error"
-  appliesTo: string[]
-  when: Expr
+  id: string;
+  title: string;
+  severity: "off" | "warn" | "error";
+  appliesTo: string[];
+  when: Expr;
   report: {
-    message: string
-  }
-}
+    message: string;
+  };
+};
 ```
 
 ---
@@ -143,10 +189,7 @@ Example:
 
 ```json
 {
-  "eq": [
-    { "call": ["jsx.attrText", "type"] },
-    "email"
-  ]
+  "eq": [{ "call": ["jsx.attrText", "type"] }, "email"]
 }
 ```
 
@@ -158,10 +201,7 @@ Example:
 
 ```json
 {
-  "all": [
-    { "eq": ["jsx.tag", "button"] },
-    { "hasAttr": "type" }
-  ]
+  "all": [{ "eq": ["jsx.tag", "button"] }, { "hasAttr": "type" }]
 }
 ```
 
@@ -169,10 +209,7 @@ Example:
 
 ```json
 {
-  "any": [
-    { "eq": ["jsx.tag", "a"] },
-    { "eq": ["jsx.componentName", "Link"] }
-  ]
+  "any": [{ "eq": ["jsx.tag", "a"] }, { "eq": ["jsx.componentName", "Link"] }]
 }
 ```
 
@@ -219,10 +256,7 @@ Example:
   "severity": "error",
   "appliesTo": ["JSXOpeningElement"],
   "when": {
-    "all": [
-      { "eq": ["jsx.tag", "img"] },
-      { "not": { "hasAttr": "alt" } }
-    ]
+    "all": [{ "eq": ["jsx.tag", "img"] }, { "not": { "hasAttr": "alt" } }]
   },
   "report": {
     "message": "<img> must have alt text."
@@ -241,10 +275,7 @@ Example:
   "severity": "warn",
   "appliesTo": ["JSXOpeningElement"],
   "when": {
-    "all": [
-      { "eq": ["jsx.tag", "button"] },
-      { "not": { "hasAttr": "type" } }
-    ]
+    "all": [{ "eq": ["jsx.tag", "button"] }, { "not": { "hasAttr": "type" } }]
   },
   "report": {
     "message": "<button> should explicitly set type=\"button\" or type=\"submit\"."
@@ -260,12 +291,11 @@ When the engine cannot confidently evaluate a condition (for example due to dyna
 
 The engine fails safely:
 
-* `true` → report
-* `false` → no report
-* `unknown` → no report
+- `true` → report
+- `false` → no report
+- `unknown` → no report
 
 This avoids noisy or misleading lint warnings.
-
 
 ---
 

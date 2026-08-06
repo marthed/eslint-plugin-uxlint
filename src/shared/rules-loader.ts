@@ -32,6 +32,30 @@ export type HeuristicFile = {
   rules: Heuristic[];
 };
 
+export type LoadedUXLintFile = {
+  version: number;
+  config: UXLintProjectConfig;
+  rules: Heuristic[];
+  configPath: string | null;
+  configError: string | null;
+};
+
+const EMPTY_UXLINT_FILE: LoadedUXLintFile = {
+  version: 1,
+  config: {},
+  rules: [],
+  configPath: null,
+  configError: null,
+};
+
+type CacheEntry = {
+  mtimeMs: number;
+  size: number;
+  loaded: LoadedUXLintFile;
+};
+
+const loadedFileCache = new Map<string, CacheEntry>();
+
 function findUp(filename: string, startDir: string): string | null {
   let dir = startDir;
   for (let i = 0; i < 25; i++) {
@@ -44,31 +68,63 @@ function findUp(filename: string, startDir: string): string | null {
   return null;
 }
 
-export function loadUXLintFile(cwd: string): HeuristicFile {
-  const p = findUp("uxlint.rules.json", cwd);
-
-  if (!p) {
+function parseUXLintFile(configPath: string, raw: string): LoadedUXLintFile {
+  let parsed: Partial<HeuristicFile>;
+  try {
+    parsed = JSON.parse(raw) as Partial<HeuristicFile>;
+  } catch (error) {
     return {
-      version: 1,
-      config: {},
-      rules: [],
+      ...EMPTY_UXLINT_FILE,
+      configPath,
+      configError: error instanceof Error ? error.message : String(error),
     };
   }
 
-  try {
-    const raw = fs.readFileSync(p, "utf8");
-    const parsed = JSON.parse(raw) as HeuristicFile;
-
+  if (parsed.rules !== undefined && !Array.isArray(parsed.rules)) {
     return {
-      version: parsed.version ?? 1,
-      config: parsed.config ?? {},
-      rules: Array.isArray(parsed.rules) ? parsed.rules : [],
+      ...EMPTY_UXLINT_FILE,
+      configPath,
+      configError: '"rules" must be an array',
     };
-  } catch {
+  }
+
+  return {
+    version: parsed.version ?? 1,
+    config: parsed.config ?? {},
+    rules: parsed.rules ?? [],
+    configPath,
+    configError: null,
+  };
+}
+
+export function loadUXLintFile(cwd: string): LoadedUXLintFile {
+  const configPath = findUp("uxlint.rules.json", cwd);
+  if (!configPath) return EMPTY_UXLINT_FILE;
+
+  try {
+    const stats = fs.statSync(configPath);
+    const cached = loadedFileCache.get(configPath);
+    if (
+      cached &&
+      cached.mtimeMs === stats.mtimeMs &&
+      cached.size === stats.size
+    ) {
+      return cached.loaded;
+    }
+
+    const raw = fs.readFileSync(configPath, "utf8");
+    const loaded = parseUXLintFile(configPath, raw);
+    loadedFileCache.set(configPath, {
+      mtimeMs: stats.mtimeMs,
+      size: stats.size,
+      loaded,
+    });
+    return loaded;
+  } catch (error) {
     return {
-      version: 1,
-      config: {},
-      rules: [],
+      ...EMPTY_UXLINT_FILE,
+      configPath,
+      configError: error instanceof Error ? error.message : String(error),
     };
   }
 }
@@ -78,5 +134,5 @@ export function loadHeuristics(cwd: string): Heuristic[] {
 }
 
 export function loadUXLintConfig(cwd: string): UXLintProjectConfig {
-  return loadUXLintFile(cwd).config ?? {};
+  return loadUXLintFile(cwd).config;
 }
