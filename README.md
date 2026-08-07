@@ -102,6 +102,27 @@ Built-in rules can recognize your design-system components through
 }
 ```
 
+Individual built-in rules can be turned off or given a team-specific message
+through `config.builtinRules`:
+
+```json
+{
+  "version": 1,
+  "config": {
+    "builtinRules": {
+      "INPUT-DATE-001": "off",
+      "INTERACTION-ASYNC-SUCCESS-001": {
+        "message": "Show a success toast or update the page after saving."
+      }
+    }
+  },
+  "rules": []
+}
+```
+
+`severity` currently supports `"off"`; the warning versus error level of
+reported findings follows the `uxlint/apply` setting in your ESLint config.
+
 ---
 
 # Defining UX Rules

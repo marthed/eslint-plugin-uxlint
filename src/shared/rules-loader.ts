@@ -15,6 +15,13 @@ export type Heuristic = {
   };
 };
 
+export type BuiltinRuleOverride =
+  | Severity
+  | {
+      severity?: Severity;
+      message?: string;
+    };
+
 export type UXLintProjectConfig = {
   designSystem?: {
     formComponents?: string[];
@@ -24,7 +31,36 @@ export type UXLintProjectConfig = {
     fieldComponents?: string[];
     fieldErrorProps?: string[];
   };
+  builtinRules?: Record<string, BuiltinRuleOverride>;
 };
+
+export type ResolvedBuiltinRuleOverride = {
+  enabled: boolean;
+  message?: string;
+};
+
+export function resolveBuiltinRuleOverride(
+  config: UXLintProjectConfig,
+  ruleId: string,
+): ResolvedBuiltinRuleOverride {
+  const override = config.builtinRules?.[ruleId];
+
+  if (typeof override === "string") {
+    return { enabled: override !== "off" };
+  }
+
+  if (typeof override === "object" && override !== null) {
+    return {
+      enabled: override.severity !== "off",
+      message:
+        typeof override.message === "string" && override.message.trim()
+          ? override.message
+          : undefined,
+    };
+  }
+
+  return { enabled: true };
+}
 
 export type HeuristicFile = {
   version: number;

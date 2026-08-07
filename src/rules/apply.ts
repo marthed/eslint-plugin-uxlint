@@ -1,6 +1,9 @@
 import path from "node:path";
 import type { Rule } from "eslint";
-import { loadUXLintFile } from "../shared/rules-loader";
+import {
+  loadUXLintFile,
+  resolveBuiltinRuleOverride,
+} from "../shared/rules-loader";
 import { makeSignals } from "../shared/signals";
 import { evalExpr, type Expr } from "../shared/dsl";
 
@@ -59,6 +62,27 @@ const rule: Rule.RuleModule = {
         projectRoot: cwd,
       },
     );
+
+    const builtinFindingIdPattern = /^\[([A-Z0-9-]+)\]\s*/;
+
+    function reportBuiltinFinding(finding: { node: any; message: string }) {
+      let message = finding.message;
+
+      const idMatch = builtinFindingIdPattern.exec(message);
+      if (idMatch) {
+        const override = resolveBuiltinRuleOverride(projectConfig, idMatch[1]);
+        if (!override.enabled) return;
+        if (override.message) {
+          message = `[${idMatch[1]}] ${override.message}`;
+        }
+      }
+
+      context.report({
+        node: finding.node,
+        messageId: "uxFinding",
+        data: { message },
+      });
+    }
 
     function applySingleNodeHeuristics(node: any) {
       const signals = makeSignals({ node, sourceCode, filename });
@@ -119,11 +143,7 @@ const rule: Rule.RuleModule = {
           store.getForms(),
         );
         for (const finding of multiNodeFindings) {
-          context.report({
-            node: finding.node,
-            messageId: "uxFinding",
-            data: { message: finding.message },
-          });
+          reportBuiltinFinding(finding);
         }
 
         const inputControlFindings = evaluateInputControls(
@@ -131,22 +151,14 @@ const rule: Rule.RuleModule = {
           store.getLabels(),
         );
         for (const finding of inputControlFindings) {
-          context.report({
-            node: finding.node,
-            messageId: "uxFinding",
-            data: { message: finding.message },
-          });
+          reportBuiltinFinding(finding);
         }
 
         const interactionFindings =
           evaluateInteractionFeedback(interactionStore);
 
         for (const finding of interactionFindings) {
-          context.report({
-            node: finding.node,
-            messageId: "uxFinding",
-            data: { message: finding.message },
-          });
+          reportBuiltinFinding(finding);
         }
       },
     };
