@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { DesignSystemComponentConfig } from "./design-system";
 
 export type Severity = "off" | "warn" | "error";
 
@@ -30,6 +31,7 @@ export type UXLintProjectConfig = {
     errorSummaryComponents?: string[];
     fieldComponents?: string[];
     fieldErrorProps?: string[];
+    components?: Record<string, DesignSystemComponentConfig>;
   };
   builtinRules?: Record<string, BuiltinRuleOverride>;
 };

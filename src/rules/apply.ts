@@ -4,6 +4,7 @@ import {
   loadUXLintFile,
   resolveBuiltinRuleOverride,
 } from "../shared/rules-loader";
+import { createComponentVocabulary } from "../shared/design-system";
 import { makeSignals } from "../shared/signals";
 import { evalExpr, type Expr } from "../shared/dsl";
 
@@ -60,6 +61,7 @@ const rule: Rule.RuleModule = {
         parser: (context as any).languageOptions?.parser,
         parserOptions: (context as any).languageOptions?.parserOptions,
         projectRoot: cwd,
+        vocabulary: createComponentVocabulary(projectConfig.designSystem),
       },
     );
 

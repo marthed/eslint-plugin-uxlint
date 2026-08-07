@@ -9,6 +9,7 @@ import {
   type ParserLike,
   type ResolvedProjectFunction,
 } from "../tracing/project-index";
+import type { ComponentVocabulary } from "../../shared/design-system";
 import { InteractionStore } from "../store";
 import type {
   HandlerPropCall,
@@ -1269,7 +1270,9 @@ function collectHandlerPropPasses(
           expression.type === "ArrowFunctionExpression" ||
           expression.type === "FunctionExpression"
         ) {
-          candidateHandlerName = extractDirectCalledHandlerName(expression.body);
+          candidateHandlerName = extractDirectCalledHandlerName(
+            expression.body,
+          );
         }
 
         if (!candidateHandlerName) continue;
@@ -1356,6 +1359,7 @@ function collectHandlerPropCalls(
 function collectVisibleStateReads(
   componentFunctionNode: any,
   stateNames: Set<string>,
+  vocabulary?: ComponentVocabulary,
 ): StateRead[] {
   const reads: StateRead[] = [];
 
@@ -1377,17 +1381,36 @@ function collectVisibleStateReads(
         const belongsToComponent = isComponentJSXName(ownerTagName);
 
         const propName = current.name?.name;
-        if (propName === "disabled" && !belongsToComponent) {
+
+        if (belongsToComponent) {
+          // Components declared in designSystem.components are trusted to
+          // visibly render their disabled/loading props even when their
+          // implementation cannot be traced (e.g. an external package).
+          if (!vocabulary?.isDeclaredComponent(ownerTagName)) return;
+
+          if (vocabulary.getDisabledProps(ownerTagName).includes(propName)) {
+            for (const stateVar of stateVars) {
+              reads.push({ stateVar, node: current, kind: "disabled-prop" });
+            }
+            return;
+          }
+
+          if (vocabulary.getLoadingProps(ownerTagName).includes(propName)) {
+            for (const stateVar of stateVars) {
+              reads.push({ stateVar, node: current, kind: "loading-prop" });
+            }
+          }
+          return;
+        }
+
+        if (propName === "disabled") {
           for (const stateVar of stateVars) {
             reads.push({ stateVar, node: current, kind: "disabled-prop" });
           }
           return;
         }
 
-        if (
-          (propName === "loading" || propName === "isLoading") &&
-          !belongsToComponent
-        ) {
+        if (propName === "loading" || propName === "isLoading") {
           for (const stateVar of stateVars) {
             reads.push({ stateVar, node: current, kind: "loading-prop" });
           }
@@ -1450,7 +1473,10 @@ function collectVisibleStateReads(
   return reads;
 }
 
-function collectVisiblePropReads(componentFunctionNode: any): PropRead[] {
+function collectVisiblePropReads(
+  componentFunctionNode: any,
+  vocabulary?: ComponentVocabulary,
+): PropRead[] {
   const reads: PropRead[] = [];
   const propAliases = collectComponentPropAliases(componentFunctionNode);
 
@@ -1471,7 +1497,36 @@ function collectVisiblePropReads(componentFunctionNode: any): PropRead[] {
         );
         if (propNames.length === 0) return;
 
+        const openingElement = current.parent;
+        const ownerTagName =
+          openingElement?.type === "JSXOpeningElement"
+            ? getJSXName(openingElement)
+            : null;
         const attributeName = current.name?.name;
+
+        const declaredOwner = vocabulary?.isDeclaredComponent(ownerTagName)
+          ? ownerTagName
+          : null;
+        if (declaredOwner) {
+          if (
+            vocabulary!.getDisabledProps(declaredOwner).includes(attributeName)
+          ) {
+            for (const propName of propNames) {
+              reads.push({ propName, node: current, kind: "disabled-prop" });
+            }
+            return;
+          }
+
+          if (
+            vocabulary!.getLoadingProps(declaredOwner).includes(attributeName)
+          ) {
+            for (const propName of propNames) {
+              reads.push({ propName, node: current, kind: "loading-prop" });
+            }
+            return;
+          }
+        }
+
         if (attributeName === "disabled") {
           for (const propName of propNames) {
             reads.push({ propName, node: current, kind: "disabled-prop" });
@@ -1777,6 +1832,7 @@ function collectComponentFacts(
   store: InteractionStore,
   multiFileTraceOptions: MultiFileTraceOptions | null,
   componentFilePath?: string,
+  vocabulary?: ComponentVocabulary,
 ): {
   statePairs: StatePair[];
   handlers: InteractionHandler[];
@@ -1808,9 +1864,7 @@ function collectComponentFacts(
       .concat([...externalStatusModel.observableStateVars]),
   );
   const currentFilePath =
-    componentFilePath ??
-    multiFileTraceOptions?.filePath ??
-    "<current-file>";
+    componentFilePath ?? multiFileTraceOptions?.filePath ?? "<current-file>";
   const namedHandlers = collectNamedHandlers(componentFunctionNode, store);
   const helperFunctionResolver = createHelperFunctionResolver(
     componentFunctionNode,
@@ -1840,14 +1894,16 @@ function collectComponentFacts(
   const stateReads = collectVisibleStateReads(
     componentFunctionNode,
     observableStateVars,
+    vocabulary,
   );
-  const propReads = collectVisiblePropReads(componentFunctionNode);
+  const propReads = collectVisiblePropReads(componentFunctionNode, vocabulary);
   const statePropPasses = collectStatePropPasses(
     componentFunctionNode,
     observableStateVars,
   );
-  const { propPasses, propSpreadPasses } =
-    collectPropPasses(componentFunctionNode);
+  const { propPasses, propSpreadPasses } = collectPropPasses(
+    componentFunctionNode,
+  );
   const handlerPropPasses = collectHandlerPropPasses(
     componentFunctionNode,
     handlersByName,
@@ -1889,6 +1945,7 @@ function collectComponentIntoStore(
   multiFileTraceOptions: MultiFileTraceOptions | null,
   visitedComponents: Set<string>,
   entryFilePath: string,
+  vocabulary?: ComponentVocabulary,
 ) {
   const componentInput = getComponentModelInput(node);
   if (!componentInput) return;
@@ -1905,6 +1962,7 @@ function collectComponentIntoStore(
     multiFileTraceOptions,
     visitedComponents,
     entryFilePath,
+    vocabulary,
   );
 }
 
@@ -1995,6 +2053,7 @@ function collectResolvedComponentIntoStore(
   multiFileTraceOptions: MultiFileTraceOptions | null,
   visitedComponents: Set<string>,
   entryFilePath: string,
+  vocabulary?: ComponentVocabulary,
 ) {
   if (!isReactComponentName(componentName)) return;
 
@@ -2008,6 +2067,7 @@ function collectResolvedComponentIntoStore(
     store,
     multiFileTraceOptions,
     resolvedFilePath,
+    vocabulary,
   );
   if (
     resolvedFilePath !== entryFilePath &&
@@ -2016,21 +2076,18 @@ function collectResolvedComponentIntoStore(
     return;
   }
 
-  addComponentFactsToStore(
-    componentName,
-    componentFacts,
-    store,
-  );
+  addComponentFactsToStore(componentName, componentFacts, store);
 
   if (!multiFileTraceOptions) return;
 
   for (const childComponentName of collectChildComponentNames(
     componentFunctionNode,
   )) {
-    const resolvedChild = multiFileTraceOptions.projectFunctionIndex.resolveFunction(
-      resolvedFilePath,
-      childComponentName,
-    );
+    const resolvedChild =
+      multiFileTraceOptions.projectFunctionIndex.resolveFunction(
+        resolvedFilePath,
+        childComponentName,
+      );
     if (!resolvedChild) continue;
 
     collectResolvedComponentIntoStore(
@@ -2041,6 +2098,7 @@ function collectResolvedComponentIntoStore(
       multiFileTraceOptions,
       visitedComponents,
       entryFilePath,
+      vocabulary,
     );
   }
 }
@@ -2051,6 +2109,7 @@ type ComponentStateCollectorOptions = {
   parserOptions?: Record<string, unknown>;
   projectRoot?: string;
   maxTraceDepth?: number;
+  vocabulary?: ComponentVocabulary;
 };
 
 export function createComponentStateCollector(
@@ -2081,6 +2140,7 @@ export function createComponentStateCollector(
         multiFileTraceOptions,
         visitedComponents,
         entryFilePath,
+        options?.vocabulary,
       );
     },
 
@@ -2091,6 +2151,7 @@ export function createComponentStateCollector(
         multiFileTraceOptions,
         visitedComponents,
         entryFilePath,
+        options?.vocabulary,
       );
     },
   };

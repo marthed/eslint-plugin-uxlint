@@ -94,13 +94,30 @@ Built-in rules can recognize your design-system components through
     "designSystem": {
       "formComponents": ["AppForm"],
       "submitComponents": ["PrimaryButton"],
-      "fieldComponents": ["TextField", "SelectField"],
-      "errorComponents": ["InlineError"]
+      "errorComponents": ["InlineError"],
+      "components": {
+        "TextField": { "role": "text-input", "labelProps": ["caption"] },
+        "AppSelect": { "role": "select" },
+        "UIButton": { "role": "button", "loadingProps": ["busy"] }
+      }
     }
   },
   "rules": []
 }
 ```
+
+Each entry in `components` declares what a component is (`role`:
+`"button"`, `"text-input"`, `"textarea"`, or `"select"`) and which props matter:
+
+- `labelProps` — props that provide a visible label (in addition to the
+  defaults `label` and `labelText`), used by the input-controls rules
+- `loadingProps` / `disabledProps` — props the component visibly renders as
+  loading or disabled state (in addition to the defaults `loading`,
+  `isLoading`, and `disabled`); interaction rules trust these as visible
+  feedback even when the component's implementation cannot be traced
+
+The older flat `fieldComponents` array keeps working and behaves like a
+`text-input`/`select` role declaration.
 
 Individual built-in rules can be turned off or given a team-specific message
 through `config.builtinRules`:

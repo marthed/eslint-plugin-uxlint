@@ -1,5 +1,6 @@
 import { MultiNodeFactStore } from "../fact-store";
 import type { UXLintProjectConfig } from "../../shared/rules-loader";
+import { createComponentVocabulary } from "../../shared/design-system";
 import {
   attrText,
   getJSXAttribute,
@@ -7,13 +8,6 @@ import {
   getLiteralAttrValue,
   isLowerTagName,
 } from "./jsx-helpers";
-
-function includesName(
-  names: string[] | undefined,
-  name: string | null,
-): boolean {
-  return !!name && !!names?.includes(name);
-}
 
 function isTextLikeInputType(inputType: string): boolean {
   return ![
@@ -129,7 +123,7 @@ export function createJSXInputControlsCollector(
   store: MultiNodeFactStore,
   config: UXLintProjectConfig,
 ) {
-  const ds = config.designSystem ?? {};
+  const vocabulary = createComponentVocabulary(config.designSystem);
 
   function JSXElement(node: any) {
     const opening = node.openingElement;
@@ -231,11 +225,15 @@ export function createJSXInputControlsCollector(
       return;
     }
 
-    if (!includesName(ds.fieldComponents, name) || isLowerTagName(name)) {
-      return;
-    }
+    const fieldRole = isLowerTagName(name)
+      ? undefined
+      : vocabulary.getFieldRole(name);
+    if (!fieldRole) return;
 
-    if (/select/i.test(name ?? "")) {
+    const labelProp =
+      getFirstTextAttr(opening, vocabulary.getLabelProps(name)) ?? undefined;
+
+    if (fieldRole === "select") {
       store.addInputControl({
         node,
         kind: "design-system-select",
@@ -244,8 +242,7 @@ export function createJSXInputControlsCollector(
         containerKey,
         name: attrText(opening, "name") ?? undefined,
         id: attrText(opening, "id") ?? undefined,
-        labelProp:
-          getFirstTextAttr(opening, ["label", "labelText"]) ?? undefined,
+        labelProp,
         ariaLabel: attrText(opening, "aria-label") ?? undefined,
         ariaLabelledBy: attrText(opening, "aria-labelledby") ?? undefined,
         wrappingLabelText,
@@ -264,7 +261,7 @@ export function createJSXInputControlsCollector(
       name: attrText(opening, "name") ?? undefined,
       id: attrText(opening, "id") ?? undefined,
       placeholder: attrText(opening, "placeholder") ?? undefined,
-      labelProp: getFirstTextAttr(opening, ["label", "labelText"]) ?? undefined,
+      labelProp,
       ariaLabel: attrText(opening, "aria-label") ?? undefined,
       ariaLabelledBy: attrText(opening, "aria-labelledby") ?? undefined,
       wrappingLabelText,
