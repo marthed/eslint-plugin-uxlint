@@ -13,6 +13,7 @@ import { createJSXFormCollector } from "../multi/collectors/jsx-forms";
 import { evaluateFormHasSubmitButNoErrorState } from "../multi/evaluators/form-submit-without-error";
 import { createJSXInputControlsCollector } from "../multi/collectors/jsx-input-controls";
 import { evaluateInputControls } from "../multi/evaluators/input-controls";
+import { makeInputControlSignals } from "../multi/input-control-signals";
 import { createComponentStateCollector } from "../interactions/collectors/component-state";
 import { evaluateInteractionFeedback } from "../interactions/evaluators/interaction-feedback";
 import { InteractionStore } from "../interactions/store";
@@ -148,12 +149,33 @@ const rule: Rule.RuleModule = {
           reportBuiltinFinding(finding);
         }
 
+        const inputControls = store.getInputControls();
+        const labels = store.getLabels();
+
         const inputControlFindings = evaluateInputControls(
-          store.getInputControls(),
-          store.getLabels(),
+          inputControls,
+          labels,
         );
         for (const finding of inputControlFindings) {
           reportBuiltinFinding(finding);
+        }
+
+        for (const h of heuristics) {
+          if (!h.appliesTo.includes("InputControl")) continue;
+          if (h.severity === "off") continue;
+
+          for (const control of inputControls) {
+            const signals = makeInputControlSignals(control, labels, filename);
+            if (evalExpr(signals, h.when as Expr) !== true) continue;
+
+            context.report({
+              node: control.node,
+              messageId: "uxFinding",
+              data: {
+                message: `[${h.id}] ${h.report.message}`,
+              },
+            });
+          }
         }
 
         const interactionFindings =

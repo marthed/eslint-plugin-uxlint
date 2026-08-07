@@ -1,5 +1,3 @@
-import type { Signals } from "./signals";
-
 export type Expr =
   | { all: Expr[] }
   | { any: Expr[] }
@@ -9,23 +7,27 @@ export type Expr =
   | { hasAttr: string }
   | { hasAnyAttr: string[] };
 
-export type ValueRef =
-  | "node.type"
-  | "jsx.tag"
-  | "jsx.componentName"
-  | { call: ["jsx.attrText", string] }; // extensible
+// A signal name (e.g. "jsx.tag", "input.kind") or a call into a
+// function-valued signal (e.g. { call: ["jsx.attrText", "type"] }).
+export type ValueRef = string | { call: [string, string] };
 
-function readValue(signals: Signals, ref: ValueRef): unknown {
-  if (typeof ref === "string") return (signals as any)[ref];
+export type SignalBag = Record<string, unknown>;
+
+function readValue(signals: SignalBag, ref: ValueRef): unknown {
+  if (typeof ref === "string") {
+    const value = signals[ref];
+    return value === undefined ? null : value;
+  }
   if ("call" in ref) {
     const [fn, arg] = ref.call;
-    if (fn === "jsx.attrText") return signals["jsx.attrText"](arg);
+    const signalFn = signals[fn];
+    if (typeof signalFn === "function") return signalFn(arg);
     return null;
   }
   return null;
 }
 
-export function evalExpr(signals: Signals, expr: Expr): boolean | "unknown" {
+export function evalExpr(signals: SignalBag, expr: Expr): boolean | "unknown" {
   if ("all" in expr) {
     let sawUnknown = false;
     for (const e of expr.all) {
@@ -67,8 +69,17 @@ export function evalExpr(signals: Signals, expr: Expr): boolean | "unknown" {
     return options.includes(got as any);
   }
 
-  if ("hasAttr" in expr) return signals["jsx.hasAttr"](expr.hasAttr);
-  if ("hasAnyAttr" in expr) return signals["jsx.hasAnyAttr"](expr.hasAnyAttr);
+  if ("hasAttr" in expr) {
+    const hasAttr = signals["jsx.hasAttr"];
+    return typeof hasAttr === "function" ? hasAttr(expr.hasAttr) : "unknown";
+  }
+
+  if ("hasAnyAttr" in expr) {
+    const hasAnyAttr = signals["jsx.hasAnyAttr"];
+    return typeof hasAnyAttr === "function"
+      ? hasAnyAttr(expr.hasAnyAttr)
+      : "unknown";
+  }
 
   return "unknown";
 }

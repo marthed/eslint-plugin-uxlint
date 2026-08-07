@@ -57,7 +57,7 @@ function getLabelTextsForControl(
   return uniqueTexts(texts);
 }
 
-function hasUsableAssociatedLabel(
+export function hasUsableAssociatedLabel(
   control: NormalizedInputControl,
   labels: NormalizedLabel[],
 ): boolean {

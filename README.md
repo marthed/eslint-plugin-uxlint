@@ -215,6 +215,71 @@ The DSL can reference signals extracted from the AST.
 
 ---
 
+# Fact Scopes
+
+Besides raw AST node types, `appliesTo` can name a **fact scope**. Fact-scope
+rules run against the normalized facts the built-in analyzers collect, so a
+single rule covers native elements and declared design-system components
+alike.
+
+## `InputControl`
+
+Evaluated once per collected input control (inputs, textareas, selects,
+checkboxes, radios, and design-system fields declared via
+`designSystem.components` or `designSystem.fieldComponents`).
+
+| Signal                    | Type    | Description                                                                                                          |
+| ------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------- |
+| `input.kind`              | string  | `"text-input"`, `"textarea"`, `"select"`, `"checkbox"`, `"radio"`, `"design-system-field"`, `"design-system-select"` |
+| `input.componentName`     | string  | Component name for design-system controls                                                                            |
+| `input.inputType`         | string  | The `type` attribute for native inputs                                                                               |
+| `input.name` / `input.id` | string  | `name` / `id` attributes                                                                                             |
+| `input.placeholder`       | string  | Placeholder text                                                                                                     |
+| `input.hasPlaceholder`    | boolean | Placeholder present and non-empty                                                                                    |
+| `input.ariaLabel`         | string  | `aria-label` text                                                                                                    |
+| `input.hasAriaLabel`      | boolean | `aria-label` present and non-empty                                                                                   |
+| `input.hasVisibleLabel`   | boolean | Wrapping label, `htmlFor`/`id` pair, `aria-labelledby`, or a design-system label prop                                |
+| `input.isWrappedByLabel`  | boolean | Control is nested inside a `<label>`                                                                                 |
+| `input.isDefaultSelected` | boolean | `checked` / `defaultChecked` present                                                                                 |
+
+Missing facts read as `""` / `false`, so comparisons stay decidable.
+
+Example: replace the built-in placeholder rule with your team's own wording:
+
+```json
+{
+  "version": 1,
+  "config": {
+    "builtinRules": { "INPUT-MOBILE-001": "off" }
+  },
+  "rules": [
+    {
+      "id": "TEAM-LABEL-001",
+      "title": "Placeholder is not a label",
+      "severity": "warn",
+      "appliesTo": ["InputControl"],
+      "when": {
+        "all": [
+          {
+            "in": [
+              "input.kind",
+              ["text-input", "textarea", "design-system-field"]
+            ]
+          },
+          { "eq": ["input.hasPlaceholder", true] },
+          { "eq": ["input.hasVisibleLabel", false] }
+        ]
+      },
+      "report": {
+        "message": "Fields need a visible label; placeholder text is not one."
+      }
+    }
+  ]
+}
+```
+
+---
+
 # Reading Attribute Values
 
 To read JSX attribute values use the `call` syntax:
