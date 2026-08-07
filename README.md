@@ -278,6 +278,60 @@ Example: replace the built-in placeholder rule with your team's own wording:
 }
 ```
 
+## `Form`
+
+Evaluated once per collected form (native `<form>` or configured
+`designSystem.formComponents`).
+
+| Signal                    | Type    | Description                                     |
+| ------------------------- | ------- | ----------------------------------------------- |
+| `form.hasSubmitControl`   | boolean | A submit control was found inside the form      |
+| `form.hasErrorIndicator`  | boolean | An error indicator was found inside the form    |
+| `form.fieldCount`         | number  | Number of collected fields                      |
+| `form.submitControlCount` | number  | Number of collected submit controls             |
+| `form.source`             | string  | `"native"`, `"framework"`, or `"design-system"` |
+
+## `Interaction`
+
+Evaluated once per traced interaction (an `onClick`/`onSubmit`/`onPress`
+binding whose handler could be resolved), after handler expansion, multi-file
+tracing, and cross-component visibility analysis.
+
+| Signal                           | Type    | Description                                            |
+| -------------------------------- | ------- | ------------------------------------------------------ |
+| `interaction.eventName`          | string  | `"onClick"`, `"onSubmit"`, `"onPress"`, or `"unknown"` |
+| `interaction.elementName`        | string  | JSX element the handler is attached to                 |
+| `interaction.componentName`      | string  | React component containing the interaction             |
+| `interaction.label`              | string  | `aria-label` of the interaction source, if any         |
+| `interaction.isAsync`            | boolean | Handler is async or writes non-sync phases             |
+| `interaction.writesState`        | boolean | Handler writes component or adapter state              |
+| `interaction.hasVisibleFeedback` | boolean | Any written state is detectably visible                |
+| `interaction.hasStartFeedback`   | boolean | Visible feedback for the pending phase                 |
+| `interaction.hasSettledFeedback` | boolean | Visible feedback when pending clears                   |
+| `interaction.hasErrorFeedback`   | boolean | Visible feedback for the error phase                   |
+| `interaction.hasSuccessFeedback` | boolean | Visible feedback for the success phase                 |
+
+Example: an interaction lifecycle rule as data:
+
+```json
+{
+  "id": "TEAM-INT-001",
+  "title": "Async interactions need error feedback",
+  "severity": "warn",
+  "appliesTo": ["Interaction"],
+  "when": {
+    "all": [
+      { "eq": ["interaction.isAsync", true] },
+      { "eq": ["interaction.writesState", true] },
+      { "eq": ["interaction.hasErrorFeedback", false] }
+    ]
+  },
+  "report": {
+    "message": "Show the user when this async action fails."
+  }
+}
+```
+
 ---
 
 # Reading Attribute Values

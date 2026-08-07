@@ -14,8 +14,13 @@ import { evaluateFormHasSubmitButNoErrorState } from "../multi/evaluators/form-s
 import { createJSXInputControlsCollector } from "../multi/collectors/jsx-input-controls";
 import { evaluateInputControls } from "../multi/evaluators/input-controls";
 import { makeInputControlSignals } from "../multi/input-control-signals";
+import { makeFormSignals } from "../multi/form-signals";
 import { createComponentStateCollector } from "../interactions/collectors/component-state";
-import { evaluateInteractionFeedback } from "../interactions/evaluators/interaction-feedback";
+import {
+  collectInteractionFacts,
+  evaluateInteractionFactFindings,
+} from "../interactions/evaluators/interaction-feedback";
+import { makeInteractionSignals } from "../interactions/interaction-signals";
 import { InteractionStore } from "../interactions/store";
 
 const rule: Rule.RuleModule = {
@@ -87,6 +92,34 @@ const rule: Rule.RuleModule = {
       });
     }
 
+    function applyFactScopeHeuristics<T>(
+      scope: string,
+      items: T[],
+      toSignals: (item: T) => Record<string, unknown>,
+      toNode: (item: T) => any,
+    ) {
+      const scopedHeuristics = heuristics.filter(
+        (h) => h.appliesTo.includes(scope) && h.severity !== "off",
+      );
+      if (scopedHeuristics.length === 0) return;
+
+      for (const item of items) {
+        const signals = toSignals(item);
+
+        for (const h of scopedHeuristics) {
+          if (evalExpr(signals, h.when as Expr) !== true) continue;
+
+          context.report({
+            node: toNode(item),
+            messageId: "uxFinding",
+            data: {
+              message: `[${h.id}] ${h.report.message}`,
+            },
+          });
+        }
+      }
+    }
+
     function applySingleNodeHeuristics(node: any) {
       const signals = makeSignals({ node, sourceCode, filename });
 
@@ -142,15 +175,15 @@ const rule: Rule.RuleModule = {
       },
 
       "Program:exit"() {
-        const multiNodeFindings = evaluateFormHasSubmitButNoErrorState(
-          store.getForms(),
-        );
+        const forms = store.getForms();
+        const inputControls = store.getInputControls();
+        const labels = store.getLabels();
+        const interactionFacts = collectInteractionFacts(interactionStore);
+
+        const multiNodeFindings = evaluateFormHasSubmitButNoErrorState(forms);
         for (const finding of multiNodeFindings) {
           reportBuiltinFinding(finding);
         }
-
-        const inputControls = store.getInputControls();
-        const labels = store.getLabels();
 
         const inputControlFindings = evaluateInputControls(
           inputControls,
@@ -160,30 +193,32 @@ const rule: Rule.RuleModule = {
           reportBuiltinFinding(finding);
         }
 
-        for (const h of heuristics) {
-          if (!h.appliesTo.includes("InputControl")) continue;
-          if (h.severity === "off") continue;
-
-          for (const control of inputControls) {
-            const signals = makeInputControlSignals(control, labels, filename);
-            if (evalExpr(signals, h.when as Expr) !== true) continue;
-
-            context.report({
-              node: control.node,
-              messageId: "uxFinding",
-              data: {
-                message: `[${h.id}] ${h.report.message}`,
-              },
-            });
-          }
-        }
-
         const interactionFindings =
-          evaluateInteractionFeedback(interactionStore);
-
+          evaluateInteractionFactFindings(interactionFacts);
         for (const finding of interactionFindings) {
           reportBuiltinFinding(finding);
         }
+
+        applyFactScopeHeuristics(
+          "InputControl",
+          inputControls,
+          (control) => makeInputControlSignals(control, labels, filename),
+          (control) => control.node,
+        );
+
+        applyFactScopeHeuristics(
+          "Form",
+          forms,
+          (form) => makeFormSignals(form, filename),
+          (form) => form.node,
+        );
+
+        applyFactScopeHeuristics(
+          "Interaction",
+          interactionFacts,
+          (fact) => makeInteractionSignals(fact, filename),
+          (fact) => fact.node,
+        );
       },
     };
   },

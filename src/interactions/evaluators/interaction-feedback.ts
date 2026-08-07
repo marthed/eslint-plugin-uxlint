@@ -155,7 +155,8 @@ function indexSpreadParentComponents(
 
   for (const parentComponent of components) {
     for (const pass of parentComponent.propSpreadPasses) {
-      const existing = parentComponentsByChild.get(pass.childComponentName) ?? [];
+      const existing =
+        parentComponentsByChild.get(pass.childComponentName) ?? [];
       existing.push(parentComponent.componentName);
       parentComponentsByChild.set(pass.childComponentName, existing);
     }
@@ -179,7 +180,10 @@ function resolveHandlersForProp(
     const current = queue.shift();
     if (!current) continue;
 
-    const currentKey = makeChildPropKey(current.componentName, current.propName);
+    const currentKey = makeChildPropKey(
+      current.componentName,
+      current.propName,
+    );
     if (visited.has(currentKey)) continue;
     visited.add(currentKey);
 
@@ -231,7 +235,10 @@ function resolveInteractionHandlers(
   interaction: { handlerId?: string; handlerName?: string },
   options: PropResolutionOptions,
 ): ResolvedInteractionHandler[] {
-  const directHandler = resolveInteractionHandler(component.handlers, interaction);
+  const directHandler = resolveInteractionHandler(
+    component.handlers,
+    interaction,
+  );
   if (directHandler) {
     return [{ component, handler: directHandler }];
   }
@@ -350,10 +357,22 @@ function hasVisibleChildPropRead(
   return false;
 }
 
-export function evaluateInteractionFeedback(
+export type InteractionFact = {
+  node: any;
+  eventName: string;
+  elementName: string;
+  componentName: string;
+  label: string;
+  isAsync: boolean;
+  writesState: boolean;
+  hasVisibleFeedback: boolean;
+  visiblePhases: Set<InteractionPhase>;
+};
+
+export function collectInteractionFacts(
   store: InteractionStore,
-): InteractionFinding[] {
-  const findings: InteractionFinding[] = [];
+): InteractionFact[] {
+  const facts: InteractionFact[] = [];
   const components = store.getComponents();
   const componentsByName = new Map(
     components.map((component) => [component.componentName, component]),
@@ -379,7 +398,6 @@ export function evaluateInteractionFeedback(
             .filter((stateWrite) => stateWrite.handlerId === handler.id)
             .map((stateWrite) => ({ component: handlerComponent, stateWrite })),
       );
-      if (writesForInteraction.length === 0) continue;
 
       const isAsyncInteraction =
         resolvedHandlers.some(({ handler }) => handler.isAsync) ||
@@ -397,40 +415,68 @@ export function evaluateInteractionFeedback(
             ),
         )
         .map(({ stateWrite }) => stateWrite);
-      const reportNode =
-        writesForInteraction.some(
-          ({ component: handlerComponent }) => handlerComponent === component,
-        )
-          ? interaction.node
-          : resolvedHandlers.find(({ component: handlerComponent, handler }) =>
-              handlerComponent.stateWrites.some(
-                (stateWrite) => stateWrite.handlerId === handler.id,
-              ),
-            )?.handler.node ?? interaction.node;
+      const reportNode = writesForInteraction.some(
+        ({ component: handlerComponent }) => handlerComponent === component,
+      )
+        ? interaction.node
+        : (resolvedHandlers.find(({ component: handlerComponent, handler }) =>
+            handlerComponent.stateWrites.some(
+              (stateWrite) => stateWrite.handlerId === handler.id,
+            ),
+          )?.handler.node ?? interaction.node);
 
-      if (!isAsyncInteraction) {
-        if (visibleWrites.length > 0) continue;
-        findings.push({
-          node: reportNode,
-          message:
-            "[INTERACTION-SYNC-001] Interaction has no detectable visible feedback. " +
-            "No component state written by this handler appears to be visibly rendered.",
-        });
-        continue;
-      }
+      facts.push({
+        node: reportNode,
+        eventName: interaction.eventName,
+        elementName: interaction.componentName ?? "",
+        componentName: component.componentName,
+        label: interaction.label ?? "",
+        isAsync: isAsyncInteraction,
+        writesState: writesForInteraction.length > 0,
+        hasVisibleFeedback: visibleWrites.length > 0,
+        visiblePhases: getAsyncPhaseCoverage(
+          visibleWrites.map((stateWrite) => stateWrite.phase),
+        ),
+      });
+    }
+  }
 
-      const phaseCoverage = getAsyncPhaseCoverage(
-        visibleWrites.map((stateWrite) => stateWrite.phase),
-      );
-      for (const requirement of REQUIRED_ASYNC_PHASE_REQUIREMENTS) {
-        if (phaseCoverage.has(requirement.phase)) continue;
-        findings.push({
-          node: reportNode,
-          message: `[${requirement.ruleId}] ${requirement.message}`,
-        });
-      }
+  return facts;
+}
+
+export function evaluateInteractionFactFindings(
+  facts: InteractionFact[],
+): InteractionFinding[] {
+  const findings: InteractionFinding[] = [];
+
+  for (const fact of facts) {
+    if (!fact.writesState) continue;
+
+    if (!fact.isAsync) {
+      if (fact.hasVisibleFeedback) continue;
+      findings.push({
+        node: fact.node,
+        message:
+          "[INTERACTION-SYNC-001] Interaction has no detectable visible feedback. " +
+          "No component state written by this handler appears to be visibly rendered.",
+      });
+      continue;
+    }
+
+    for (const requirement of REQUIRED_ASYNC_PHASE_REQUIREMENTS) {
+      if (fact.visiblePhases.has(requirement.phase)) continue;
+      findings.push({
+        node: fact.node,
+        message: `[${requirement.ruleId}] ${requirement.message}`,
+      });
     }
   }
 
   return findings;
+}
+
+export function evaluateInteractionFeedback(
+  store: InteractionStore,
+): InteractionFinding[] {
+  return evaluateInteractionFactFindings(collectInteractionFacts(store));
 }
