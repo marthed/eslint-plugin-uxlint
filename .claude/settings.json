@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm test *)",
+      "Bash(npm run build)",
+      "Bash(npm run build *)",
+      "Bash(npm run playground:lint)",
+      "Bash(npm run playground:lint *)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx tsc --noEmit *)",
+      "Bash(npx prettier *)",
+      "Bash(node benchmarks/noise-benchmark.mjs *)"
+    ]
+  }
+}
