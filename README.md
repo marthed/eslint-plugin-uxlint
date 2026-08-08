@@ -119,6 +119,22 @@ Each entry in `components` declares what a component is (`role`:
 The older flat `fieldComponents` array keeps working and behaves like a
 `text-input`/`select` role declaration.
 
+Imperative feedback calls in handlers — `toast(...)`, `toast.error(...)`,
+`alert(...)` by default — count as visible interaction feedback and are
+classified into async phases by their position (before the first `await`,
+after it, in `catch`, in `finally`) and by member names like `.error` /
+`.success`. Add your own notifier names with `designSystem.feedbackFunctions`:
+
+```json
+{
+  "config": {
+    "designSystem": {
+      "feedbackFunctions": ["notify", "enqueueSnackbar"]
+    }
+  }
+}
+```
+
 Individual built-in rules can be turned off or given a team-specific message
 through `config.builtinRules`:
 

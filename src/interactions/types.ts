@@ -3,7 +3,16 @@ export type StatePair = {
   setterVar: string;
 };
 
-export type InteractionPhase = "sync" | "start" | "success" | "error" | "settled";
+// Pseudo state var recorded for imperative feedback calls (toast, alert, ...).
+// Writes to it are always treated as visible by the interaction evaluator.
+export const IMPERATIVE_FEEDBACK_STATE_VAR = "<imperative-feedback>";
+
+export type InteractionPhase =
+  | "sync"
+  | "start"
+  | "success"
+  | "error"
+  | "settled";
 
 export type VisibleReadKind =
   | "disabled-prop"

@@ -180,7 +180,10 @@ const rule: Rule.RuleModule = {
         const labels = store.getLabels();
         const interactionFacts = collectInteractionFacts(interactionStore);
 
-        const multiNodeFindings = evaluateFormHasSubmitButNoErrorState(forms);
+        const multiNodeFindings = evaluateFormHasSubmitButNoErrorState(
+          forms,
+          interactionFacts,
+        );
         for (const finding of multiNodeFindings) {
           reportBuiltinFinding(finding);
         }

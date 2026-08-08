@@ -32,6 +32,7 @@ export type UXLintProjectConfig = {
     fieldComponents?: string[];
     fieldErrorProps?: string[];
     components?: Record<string, DesignSystemComponentConfig>;
+    feedbackFunctions?: string[];
   };
   builtinRules?: Record<string, BuiltinRuleOverride>;
 };

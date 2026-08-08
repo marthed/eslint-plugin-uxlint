@@ -14,11 +14,14 @@ export type DesignSystemComponentConfig = {
 type DesignSystemSlice = {
   fieldComponents?: string[];
   components?: Record<string, DesignSystemComponentConfig>;
+  feedbackFunctions?: string[];
 };
 
 const DEFAULT_LABEL_PROPS = ["label", "labelText"];
 const DEFAULT_LOADING_PROPS = ["loading", "isLoading"];
 const DEFAULT_DISABLED_PROPS = ["disabled"];
+
+export const DEFAULT_FEEDBACK_FUNCTIONS = ["toast", "alert"];
 
 export type FieldRole = "text-input" | "textarea" | "select";
 
@@ -28,6 +31,7 @@ export type ComponentVocabulary = {
   getLabelProps(componentName: string | null | undefined): string[];
   getLoadingProps(componentName: string | null | undefined): string[];
   getDisabledProps(componentName: string | null | undefined): string[];
+  getFeedbackFunctions(): string[];
 };
 
 export function createComponentVocabulary(
@@ -102,11 +106,19 @@ export function createComponentVocabulary(
     );
   }
 
+  function getFeedbackFunctions(): string[] {
+    return withDefaults(
+      designSystem?.feedbackFunctions,
+      DEFAULT_FEEDBACK_FUNCTIONS,
+    );
+  }
+
   return {
     isDeclaredComponent,
     getFieldRole,
     getLabelProps,
     getLoadingProps,
     getDisabledProps,
+    getFeedbackFunctions,
   };
 }

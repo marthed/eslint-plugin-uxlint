@@ -1,4 +1,5 @@
 import { InteractionStore } from "../store";
+import { IMPERATIVE_FEEDBACK_STATE_VAR } from "../types";
 import type {
   ComponentStateModel,
   InteractionHandler,
@@ -359,6 +360,7 @@ function hasVisibleChildPropRead(
 
 export type InteractionFact = {
   node: any;
+  sourceNode: any;
   eventName: string;
   elementName: string;
   componentName: string;
@@ -407,6 +409,7 @@ export function collectInteractionFacts(
       const visibleWrites = writesForInteraction
         .filter(
           ({ component: handlerComponent, stateWrite }) =>
+            stateWrite.stateVar === IMPERATIVE_FEEDBACK_STATE_VAR ||
             hasDirectVisibleStateRead(handlerComponent, stateWrite.stateVar) ||
             hasVisibleChildPropRead(
               handlerComponent,
@@ -427,6 +430,7 @@ export function collectInteractionFacts(
 
       facts.push({
         node: reportNode,
+        sourceNode: interaction.node,
         eventName: interaction.eventName,
         elementName: interaction.componentName ?? "",
         componentName: component.componentName,

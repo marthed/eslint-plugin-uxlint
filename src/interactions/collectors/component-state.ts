@@ -9,8 +9,12 @@ import {
   type ParserLike,
   type ResolvedProjectFunction,
 } from "../tracing/project-index";
-import type { ComponentVocabulary } from "../../shared/design-system";
+import {
+  DEFAULT_FEEDBACK_FUNCTIONS,
+  type ComponentVocabulary,
+} from "../../shared/design-system";
 import { InteractionStore } from "../store";
+import { IMPERATIVE_FEEDBACK_STATE_VAR } from "../types";
 import type {
   HandlerPropCall,
   HandlerPropPass,
@@ -795,6 +799,55 @@ function getBooleanLiteralArgument(callExpressionNode: any): boolean | null {
   return null;
 }
 
+function getFeedbackCallMatch(
+  callExpressionNode: any,
+  feedbackFunctionNames: Set<string>,
+): { memberName: string | null } | null {
+  const callee = callExpressionNode?.callee;
+
+  if (callee?.type === "Identifier") {
+    return feedbackFunctionNames.has(callee.name) ? { memberName: null } : null;
+  }
+
+  if (
+    callee?.type === "MemberExpression" &&
+    callee.computed === false &&
+    callee.object?.type === "Identifier" &&
+    callee.property?.type === "Identifier"
+  ) {
+    if (
+      feedbackFunctionNames.has(callee.object.name) ||
+      feedbackFunctionNames.has(callee.property.name)
+    ) {
+      return { memberName: callee.property.name };
+    }
+  }
+
+  return null;
+}
+
+function getFeedbackPhases(
+  positionalPhase: InteractionPhase,
+  memberName: string | null,
+): InteractionPhase[] {
+  if (positionalPhase === "sync") return ["sync"];
+  if (positionalPhase === "settled") return ["settled"];
+  if (positionalPhase === "error") return ["error"];
+
+  // Member names like toast.error / toast.success carry outcome semantics.
+  if (memberName) {
+    if (/error|fail|warn/i.test(memberName)) return ["error"];
+    if (/success/i.test(memberName)) return ["success"];
+  }
+
+  if (positionalPhase === "start") return ["start"];
+
+  // A plain feedback call after the first await usually sits in outcome
+  // handling; branches for success and failure are statically
+  // indistinguishable, so count it for both rather than over-report.
+  return ["success", "error"];
+}
+
 function collectStateWritesForHandler(
   handler: InteractionHandler,
   statePairs: StatePair[],
@@ -802,6 +855,7 @@ function collectStateWritesForHandler(
   externalStatusModel: ExternalStatusModel,
   currentFilePath: string,
   maxTraceDepth: number,
+  feedbackFunctionNames: Set<string>,
 ): StateWrite[] {
   const setterToState = new Map(
     statePairs.map((pair) => [pair.setterVar, pair.stateVar]),
@@ -841,6 +895,30 @@ function collectStateWritesForHandler(
             ),
             node: current,
           });
+        }
+
+        const feedbackMatch = getFeedbackCallMatch(
+          current,
+          feedbackFunctionNames,
+        );
+        if (feedbackMatch) {
+          const positionalPhase = classifyStateWriteWithContext(
+            current,
+            phaseContext,
+            current,
+          );
+          for (const phase of getFeedbackPhases(
+            positionalPhase,
+            feedbackMatch.memberName,
+          )) {
+            writes.push({
+              handlerId: handler.id,
+              stateVar: IMPERATIVE_FEEDBACK_STATE_VAR,
+              setterVar: callTargetName,
+              phase,
+              node: current,
+            });
+          }
         }
 
         const triggeredStateVars = new Set<string>();
@@ -1690,6 +1768,7 @@ function resolveInteractionHandlerReference(
   store: InteractionStore,
   currentFilePath: string,
   maxTraceDepth: number,
+  feedbackFunctionNames: Set<string>,
 ): {
   handlerId?: string;
   handlerName?: string;
@@ -1743,6 +1822,7 @@ function resolveInteractionHandlerReference(
         externalStatusModel,
         currentFilePath,
         maxTraceDepth,
+        feedbackFunctionNames,
       ),
     };
   }
@@ -1759,6 +1839,7 @@ function collectInteractionsAndInlineHandlers(
   store: InteractionStore,
   currentFilePath: string,
   maxTraceDepth: number,
+  feedbackFunctionNames: Set<string>,
 ): {
   interactions: Array<{
     id: string;
@@ -1801,6 +1882,7 @@ function collectInteractionsAndInlineHandlers(
         store,
         currentFilePath,
         maxTraceDepth,
+        feedbackFunctionNames,
       );
 
       if (resolution.inlineHandler) {
@@ -1876,6 +1958,9 @@ function collectComponentFacts(
   const handlersByName = new Map(
     namedHandlers.map((handler) => [handler.name, handler]),
   );
+  const feedbackFunctionNames = new Set(
+    vocabulary?.getFeedbackFunctions() ?? DEFAULT_FEEDBACK_FUNCTIONS,
+  );
 
   const stateWrites: StateWrite[] = [];
   for (const handler of namedHandlers) {
@@ -1887,6 +1972,7 @@ function collectComponentFacts(
         externalStatusModel,
         currentFilePath,
         maxTraceDepth,
+        feedbackFunctionNames,
       ),
     );
   }
@@ -1917,6 +2003,7 @@ function collectComponentFacts(
     store,
     currentFilePath,
     maxTraceDepth,
+    feedbackFunctionNames,
   );
   const handlers = [...namedHandlers, ...interactionData.inlineHandlers];
   const handlerPropCalls = collectHandlerPropCalls(
