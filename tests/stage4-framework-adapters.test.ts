@@ -170,7 +170,7 @@ serialTest(
 );
 
 serialTest(
-  "Zustand: missing pending feedback reports start and settled warnings",
+  "Zustand: missing pending feedback reports a start warning",
   () => {
     const code = `
       function ZustandMissingPending() {
@@ -194,6 +194,6 @@ serialTest(
       }
     `;
 
-    assert.deepEqual(lintIds(code), [IDS.asyncStart, IDS.asyncSettled]);
+    assert.deepEqual(lintIds(code), [IDS.asyncStart]);
   },
 );

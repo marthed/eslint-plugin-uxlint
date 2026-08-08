@@ -7,6 +7,11 @@ export type StatePair = {
 // Writes to it are always treated as visible by the interaction evaluator.
 export const IMPERATIVE_FEEDBACK_STATE_VAR = "<imperative-feedback>";
 
+// Pseudo state var recorded for navigation (router.push, navigate,
+// location.href = ...). Navigation replaces the view, so these writes are
+// always treated as visible by the interaction evaluator.
+export const NAVIGATION_FEEDBACK_STATE_VAR = "<navigation-feedback>";
+
 export type InteractionPhase =
   | "sync"
   | "start"

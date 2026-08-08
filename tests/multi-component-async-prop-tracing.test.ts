@@ -112,7 +112,6 @@ serialTest(
 
     assert.deepEqual(ids, [
       IDS.asyncStart,
-      IDS.asyncSettled,
       IDS.asyncError,
       IDS.asyncSuccess,
     ]);

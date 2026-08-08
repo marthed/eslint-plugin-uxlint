@@ -14,7 +14,10 @@ import {
   type ComponentVocabulary,
 } from "../../shared/design-system";
 import { InteractionStore } from "../store";
-import { IMPERATIVE_FEEDBACK_STATE_VAR } from "../types";
+import {
+  IMPERATIVE_FEEDBACK_STATE_VAR,
+  NAVIGATION_FEEDBACK_STATE_VAR,
+} from "../types";
 import type {
   HandlerPropCall,
   HandlerPropPass,
@@ -826,6 +829,95 @@ function getFeedbackCallMatch(
   return null;
 }
 
+const NAVIGATION_OBJECT_NAMES = new Set([
+  "router",
+  "history",
+  "location",
+  "navigation",
+]);
+const NAVIGATION_METHOD_NAMES = new Set([
+  "push",
+  "replace",
+  "assign",
+  "reload",
+  "back",
+  "refresh",
+  "navigate",
+  "go",
+]);
+const NAVIGATION_FUNCTION_NAMES = new Set(["navigate", "redirect"]);
+const LOCATION_ASSIGNMENT_PROPERTIES = new Set([
+  "href",
+  "pathname",
+  "hash",
+  "search",
+]);
+
+function memberChainContainsName(node: any, names: Set<string>): boolean {
+  let current = node;
+
+  while (current) {
+    if (current.type === "Identifier") return names.has(current.name);
+    if (current.type !== "MemberExpression" || current.computed) return false;
+    if (
+      current.property?.type === "Identifier" &&
+      names.has(current.property.name)
+    ) {
+      return true;
+    }
+    current = current.object;
+  }
+
+  return false;
+}
+
+function isNavigationCall(callExpressionNode: any): boolean {
+  const callee = callExpressionNode?.callee;
+
+  if (callee?.type === "Identifier") {
+    return NAVIGATION_FUNCTION_NAMES.has(callee.name);
+  }
+
+  if (
+    callee?.type === "MemberExpression" &&
+    callee.computed === false &&
+    callee.property?.type === "Identifier" &&
+    NAVIGATION_METHOD_NAMES.has(callee.property.name)
+  ) {
+    return memberChainContainsName(callee.object, NAVIGATION_OBJECT_NAMES);
+  }
+
+  return false;
+}
+
+function isLocationAssignment(assignmentLeftNode: any): boolean {
+  if (
+    assignmentLeftNode?.type !== "MemberExpression" ||
+    assignmentLeftNode.computed !== false ||
+    assignmentLeftNode.property?.type !== "Identifier" ||
+    !LOCATION_ASSIGNMENT_PROPERTIES.has(assignmentLeftNode.property.name)
+  ) {
+    return false;
+  }
+
+  return memberChainContainsName(
+    assignmentLeftNode.object,
+    new Set(["location"]),
+  );
+}
+
+// Navigation replaces the current view: outcome phases and pending state are
+// all resolved from the user's point of view.
+function getNavigationPhases(
+  positionalPhase: InteractionPhase,
+): InteractionPhase[] {
+  if (positionalPhase === "sync") return ["sync"];
+  if (positionalPhase === "start") return ["start"];
+  if (positionalPhase === "settled") return ["settled"];
+  if (positionalPhase === "error") return ["error", "settled"];
+  return ["success", "error", "settled"];
+}
+
 function getFeedbackPhases(
   positionalPhase: InteractionPhase,
   memberName: string | null,
@@ -876,6 +968,26 @@ function collectStateWritesForHandler(
     walkAst(
       functionNode.body ?? functionNode,
       (current) => {
+        if (current.type === "AssignmentExpression") {
+          if (isLocationAssignment(current.left)) {
+            const positionalPhase = classifyStateWriteWithContext(
+              current,
+              phaseContext,
+              current,
+            );
+            for (const phase of getNavigationPhases(positionalPhase)) {
+              writes.push({
+                handlerId: handler.id,
+                stateVar: NAVIGATION_FEEDBACK_STATE_VAR,
+                setterVar: "location",
+                phase,
+                node: current,
+              });
+            }
+          }
+          return;
+        }
+
         if (current.type !== "CallExpression") return;
 
         const calleeName =
@@ -914,6 +1026,23 @@ function collectStateWritesForHandler(
             writes.push({
               handlerId: handler.id,
               stateVar: IMPERATIVE_FEEDBACK_STATE_VAR,
+              setterVar: callTargetName,
+              phase,
+              node: current,
+            });
+          }
+        }
+
+        if (isNavigationCall(current)) {
+          const positionalPhase = classifyStateWriteWithContext(
+            current,
+            phaseContext,
+            current,
+          );
+          for (const phase of getNavigationPhases(positionalPhase)) {
+            writes.push({
+              handlerId: handler.id,
+              stateVar: NAVIGATION_FEEDBACK_STATE_VAR,
               setterVar: callTargetName,
               phase,
               node: current,
@@ -1434,6 +1563,33 @@ function collectHandlerPropCalls(
   return calls;
 }
 
+// Host-element attributes whose value change is user-visible. Event handlers,
+// refs, keys, and data-* attributes are deliberately excluded.
+const VISIBLE_HOST_ATTRIBUTES = new Set([
+  "src",
+  "href",
+  "value",
+  "checked",
+  "selected",
+  "open",
+  "hidden",
+  "alt",
+  "title",
+  "placeholder",
+  "className",
+  "style",
+  "width",
+  "height",
+]);
+
+function isVisibleHostAttribute(attributeName: unknown): boolean {
+  if (typeof attributeName !== "string") return false;
+  return (
+    VISIBLE_HOST_ATTRIBUTES.has(attributeName) ||
+    attributeName.startsWith("aria-")
+  );
+}
+
 function collectVisibleStateReads(
   componentFunctionNode: any,
   stateNames: Set<string>,
@@ -1491,6 +1647,17 @@ function collectVisibleStateReads(
         if (propName === "loading" || propName === "isLoading") {
           for (const stateVar of stateVars) {
             reads.push({ stateVar, node: current, kind: "loading-prop" });
+          }
+          return;
+        }
+
+        if (isVisibleHostAttribute(propName)) {
+          for (const stateVar of stateVars) {
+            reads.push({
+              stateVar,
+              node: current,
+              kind: "generic-visible-read",
+            });
           }
           return;
         }
@@ -1615,6 +1782,20 @@ function collectVisiblePropReads(
         if (attributeName === "loading" || attributeName === "isLoading") {
           for (const propName of propNames) {
             reads.push({ propName, node: current, kind: "loading-prop" });
+          }
+          return;
+        }
+
+        if (
+          !isComponentJSXName(ownerTagName) &&
+          isVisibleHostAttribute(attributeName)
+        ) {
+          for (const propName of propNames) {
+            reads.push({
+              propName,
+              node: current,
+              kind: "generic-visible-read",
+            });
           }
           return;
         }

@@ -54,10 +54,7 @@ serialTest(
       lintWithApplyRule(SAVE_PANEL_WITH_UNRENDERED_BUSY_PROP),
     );
 
-    assert.deepEqual(ids, [
-      "INTERACTION-ASYNC-START-001",
-      "INTERACTION-ASYNC-SETTLED-001",
-    ]);
+    assert.deepEqual(ids, ["INTERACTION-ASYNC-START-001"]);
   },
 );
 

@@ -112,12 +112,7 @@ serialTest("Zustand bad example reports missing pending feedback", () => {
     "zustand",
     path.join("components", "ZustandBadPanel.tsx"),
   );
-  assert.deepEqual(ids, [
-    IDS.asyncStart,
-    IDS.asyncSettled,
-    IDS.asyncStart,
-    IDS.asyncSettled,
-  ]);
+  assert.deepEqual(ids, [IDS.asyncStart, IDS.asyncStart]);
 });
 
 serialTest("Zustand good example reports no warnings", () => {

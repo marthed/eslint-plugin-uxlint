@@ -1,5 +1,8 @@
 import { InteractionStore } from "../store";
-import { IMPERATIVE_FEEDBACK_STATE_VAR } from "../types";
+import {
+  IMPERATIVE_FEEDBACK_STATE_VAR,
+  NAVIGATION_FEEDBACK_STATE_VAR,
+} from "../types";
 import type {
   ComponentStateModel,
   InteractionHandler,
@@ -410,6 +413,7 @@ export function collectInteractionFacts(
         .filter(
           ({ component: handlerComponent, stateWrite }) =>
             stateWrite.stateVar === IMPERATIVE_FEEDBACK_STATE_VAR ||
+            stateWrite.stateVar === NAVIGATION_FEEDBACK_STATE_VAR ||
             hasDirectVisibleStateRead(handlerComponent, stateWrite.stateVar) ||
             hasVisibleChildPropRead(
               handlerComponent,
@@ -469,6 +473,16 @@ export function evaluateInteractionFactFindings(
 
     for (const requirement of REQUIRED_ASYNC_PHASE_REQUIREMENTS) {
       if (fact.visiblePhases.has(requirement.phase)) continue;
+
+      // When no pending cue is ever shown there is nothing to clear; the
+      // start finding already covers this interaction's pending problem.
+      if (
+        requirement.phase === "settled" &&
+        !fact.visiblePhases.has("start")
+      ) {
+        continue;
+      }
+
       findings.push({
         node: fact.node,
         message: `[${requirement.ruleId}] ${requirement.message}`,

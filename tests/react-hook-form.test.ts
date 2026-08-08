@@ -103,7 +103,6 @@ serialTest(
 
     assert.deepEqual(warningIds(lintWithApplyRule(code)), [
       "INTERACTION-ASYNC-START-001",
-      "INTERACTION-ASYNC-SETTLED-001",
       "INTERACTION-ASYNC-ERROR-001",
       "INTERACTION-ASYNC-SUCCESS-001",
     ]);
