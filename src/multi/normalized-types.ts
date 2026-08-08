@@ -54,6 +54,7 @@ export type NormalizedErrorIndicator = {
     | "error-component"
     | "field-error-prop"
     | "error-summary"
+    | "error-state-read"
     | "unknown";
 };
 

@@ -2,15 +2,74 @@ import { MultiNodeFactStore } from "../fact-store";
 import type { UXLintProjectConfig } from "../../shared/rules-loader";
 import { attrText, getJSXName, hasAttr, isLowerTagName } from "./jsx-helpers";
 
-function includesName(names: string[] | undefined, name: string | null): boolean {
+function includesName(
+  names: string[] | undefined,
+  name: string | null,
+): boolean {
   return !!name && !!names?.includes(name);
+}
+
+const ERROR_STATE_NAME = /^(errors|fieldErrors|formErrors|validationErrors)$/;
+
+function isErrorStateMemberExpression(node: any): boolean {
+  if (node?.type !== "MemberExpression") return false;
+
+  return (
+    (node.object?.type === "Identifier" &&
+      ERROR_STATE_NAME.test(node.object.name)) ||
+    (node.computed === false &&
+      node.property?.type === "Identifier" &&
+      ERROR_STATE_NAME.test(node.property.name))
+  );
+}
+
+// Finds rendered reads of error state (e.g. react-hook-form's
+// {errors.name && <p>{errors.name.message}</p>}) inside a form subtree.
+// JSX attributes are skipped so handler expressions don't count as render.
+function findErrorStateRead(formNode: any): any | null {
+  let found: any = null;
+
+  function visit(current: any) {
+    if (found || !current || typeof current.type !== "string") return;
+    if (current.type === "JSXAttribute") return;
+
+    if (isErrorStateMemberExpression(current)) {
+      found = current;
+      return;
+    }
+
+    for (const key of Object.keys(current)) {
+      if (key === "parent") continue;
+      const value = current[key];
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          if (entry && typeof entry === "object") visit(entry);
+        }
+      } else if (value && typeof value === "object") {
+        visit(value);
+      }
+    }
+  }
+
+  visit(formNode);
+  return found;
 }
 
 export function createJSXFormCollector(
   store: MultiNodeFactStore,
-  config: UXLintProjectConfig
+  config: UXLintProjectConfig,
 ) {
   const ds = config.designSystem ?? {};
+
+  function addErrorStateReadIndicator(formNode: any) {
+    const errorStateRead = findErrorStateRead(formNode);
+    if (!errorStateRead) return;
+
+    store.addErrorIndicator({
+      node: errorStateRead,
+      kind: "error-state-read",
+    });
+  }
 
   function enterJSXElement(node: any) {
     const opening = node.openingElement;
@@ -22,11 +81,13 @@ export function createJSXFormCollector(
     // 1) Form scope start
     if (name === "form") {
       store.enterForm(node, "html", "native");
+      addErrorStateReadIndicator(node);
       return;
     }
 
     if (includesName(ds.formComponents, name)) {
       store.enterForm(node, "react", "design-system");
+      addErrorStateReadIndicator(node);
       return;
     }
 
@@ -62,8 +123,14 @@ export function createJSXFormCollector(
       includesName(ds.fieldComponents, name);
 
     if (isField) {
-      const fieldErrorProps = ds.fieldErrorProps ?? ["error", "errorMessage", "invalid"];
-      const hasErrorProp = fieldErrorProps.some((prop) => hasAttr(opening, prop));
+      const fieldErrorProps = ds.fieldErrorProps ?? [
+        "error",
+        "errorMessage",
+        "invalid",
+      ];
+      const hasErrorProp = fieldErrorProps.some((prop) =>
+        hasAttr(opening, prop),
+      );
 
       store.addField({
         node,
@@ -98,7 +165,9 @@ export function createJSXFormCollector(
 
     if (
       !isNative &&
-      ["ErrorMessage", "InlineError", "FormError", "FormErrorSummary"].includes(name ?? "")
+      ["ErrorMessage", "InlineError", "FormError", "FormErrorSummary"].includes(
+        name ?? "",
+      )
     ) {
       store.addErrorIndicator({
         node,

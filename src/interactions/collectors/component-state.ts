@@ -1786,6 +1786,21 @@ function resolveInteractionHandlerReference(
     };
   }
 
+  // Wrapper invocations like react-hook-form's onSubmit={handleSubmit(onSubmit)}:
+  // resolve to the first argument that names a known local handler.
+  if (expression.type === "CallExpression") {
+    for (const argument of expression.arguments ?? []) {
+      if (argument?.type !== "Identifier") continue;
+      const namedHandler = handlersByName.get(argument.name);
+      if (namedHandler) {
+        return {
+          handlerId: namedHandler.id,
+          handlerName: argument.name,
+        };
+      }
+    }
+  }
+
   if (
     expression.type === "ArrowFunctionExpression" ||
     expression.type === "FunctionExpression"
