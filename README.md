@@ -83,10 +83,6 @@ interaction feedback and input controls:
   date-format guidance, non-binary or deferred toggle switches, and
   split buttons missing a default action or used for navigation.
 
-See [docs/built-in-rule-reference.md](docs/built-in-rule-reference.md) for the
-full reference, and [docs/uxlint-direction.md](docs/uxlint-direction.md) for the
-project direction.
-
 Built-in rules can recognize your design-system components through
 `config.designSystem` in `uxlint.rules.json`:
 
