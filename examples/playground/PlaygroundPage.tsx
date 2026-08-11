@@ -95,6 +95,36 @@ export function PlaygroundPage() {
       />
 
       <CaseRow
+        title="Text-based date fields need format guidance (INPUT-DATE-002)"
+        bad={<DateFieldWithoutFormatHint />}
+        good={<DateFieldWithFormatHint />}
+      />
+
+      <CaseRow
+        title="Toggle switches must be binary (INPUT-TOGGLE-001)"
+        bad={<ToggleBoundToNonBooleanState />}
+        good={<ToggleBoundToBooleanState />}
+      />
+
+      <CaseRow
+        title="Toggle switches should apply immediately (INPUT-TOGGLE-002)"
+        bad={<DeferredToggleInForm />}
+        good={<ImmediateToggle />}
+      />
+
+      <CaseRow
+        title="Split buttons need a default action (INPUT-SPLIT-001)"
+        bad={<SplitButtonMenuOnly />}
+        good={<SplitButtonWithPrimaryAction />}
+      />
+
+      <CaseRow
+        title="Split buttons should not navigate (INPUT-SPLIT-002)"
+        bad={<SplitButtonNavigatesAway />}
+        good={<SplitButtonTriggersCommand />}
+      />
+
+      <CaseRow
         title="Button type (BTN-001)"
         bad={<button>Save</button>}
         good={<button type="button">Save</button>}
@@ -304,6 +334,157 @@ function NativeDateField() {
       <label htmlFor="birth-date">Birth date</label>
       <input id="birth-date" type="date" name="birthDate" />
     </form>
+  );
+}
+
+function DateFieldWithoutFormatHint() {
+  return (
+    <>
+      <label htmlFor="dob-plain">Date of birth</label>
+      <input id="dob-plain" type="text" name="dob" />
+    </>
+  );
+}
+
+function DateFieldWithFormatHint() {
+  return (
+    <>
+      <label htmlFor="dob-hinted">Date of birth</label>
+      <input id="dob-hinted" type="text" name="dob" placeholder="MM/DD/YYYY" />
+    </>
+  );
+}
+
+function ToggleBoundToNonBooleanState() {
+  // Typed as `any` only so this intentionally-bad example (a switch bound
+  // directly to non-boolean state) still compiles for the demo.
+  const [theme, setTheme] = useState<any>("light");
+
+  return (
+    <label>
+      Dark mode
+      <input
+        type="checkbox"
+        role="switch"
+        checked={theme}
+        onChange={() => setTheme(theme === "light" ? "dark" : "light")}
+      />
+    </label>
+  );
+}
+
+function ToggleBoundToBooleanState() {
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  return (
+    <label>
+      Dark mode
+      <input
+        type="checkbox"
+        role="switch"
+        checked={isDarkMode}
+        onChange={() => setIsDarkMode(!isDarkMode)}
+      />
+    </label>
+  );
+}
+
+function DeferredToggleInForm() {
+  const [notifications, setNotifications] = useState(false);
+
+  return (
+    <form>
+      <label>
+        Email notifications
+        <input
+          type="checkbox"
+          role="switch"
+          checked={notifications}
+          onChange={() => setNotifications(!notifications)}
+        />
+      </label>
+      <button type="submit">Save preferences</button>
+    </form>
+  );
+}
+
+function ImmediateToggle() {
+  const [notifications, setNotifications] = useState(false);
+
+  return (
+    <label>
+      Email notifications
+      <input
+        type="checkbox"
+        role="switch"
+        checked={notifications}
+        onChange={() => setNotifications(!notifications)}
+      />
+    </label>
+  );
+}
+
+function SplitButton({
+  label,
+  onClick,
+  items,
+}: {
+  label?: string;
+  onClick?: () => void;
+  items: Array<{ label: string; onSelect?: () => void }>;
+}) {
+  return (
+    <div style={{ display: "inline-flex" }}>
+      {label && (
+        <button type="button" onClick={onClick}>
+          {label}
+        </button>
+      )}
+      <button type="button" aria-haspopup="menu">
+        ▾
+      </button>
+      {items.length === 0 && null}
+    </div>
+  );
+}
+
+function saveDocument() {}
+
+function SplitButtonMenuOnly() {
+  return (
+    <SplitButton items={[{ label: "Export CSV" }, { label: "Export PDF" }]} />
+  );
+}
+
+function SplitButtonWithPrimaryAction() {
+  return (
+    <SplitButton
+      label="Export CSV"
+      onClick={() => saveDocument()}
+      items={[{ label: "Export PDF" }]}
+    />
+  );
+}
+
+function SplitButtonNavigatesAway() {
+  return (
+    <SplitButton
+      label="Settings"
+      onClick={() => {
+        window.location.href = "/settings";
+      }}
+      items={[{ label: "Advanced settings" }]}
+    />
+  );
+}
+
+function SplitButtonTriggersCommand() {
+  return (
+    <SplitButton
+      label="Save"
+      onClick={() => saveDocument()}
+      items={[{ label: "Save as..." }]}
+    />
   );
 }
 

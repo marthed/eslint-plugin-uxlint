@@ -70,3 +70,19 @@ export type NormalizedForm = {
   fields: NormalizedField[];
   errorIndicators: NormalizedErrorIndicator[];
 };
+
+export type NormalizedToggleControl = {
+  node: any;
+  formId?: string;
+  // "unknown" when the bound value can't be statically classified (not a
+  // simple local identifier, no local useState found, or a non-literal
+  // initializer) — the rule stays silent rather than guessing.
+  boundValueShape: "boolean" | "non-boolean" | "unknown";
+};
+
+export type NormalizedSplitButton = {
+  node: any;
+  componentName?: string;
+  hasPrimaryAction: boolean;
+  navigatesToRoute: boolean;
+};

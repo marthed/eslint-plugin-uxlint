@@ -23,6 +23,10 @@ import {
 } from "./ast-helpers";
 import type { ExternalStatusModel } from "./external-status-model";
 import type { HelperFunctionResolver } from "./helper-resolver";
+import {
+  isLocationAssignmentTarget as isLocationAssignment,
+  isNavigationCallExpression as isNavigationCall,
+} from "../../shared/navigation";
 
 function isInsideCatch(node: any): boolean {
   let current = node;
@@ -183,83 +187,6 @@ function getFeedbackCallMatch(
   }
 
   return null;
-}
-
-const NAVIGATION_OBJECT_NAMES = new Set([
-  "router",
-  "history",
-  "location",
-  "navigation",
-]);
-const NAVIGATION_METHOD_NAMES = new Set([
-  "push",
-  "replace",
-  "assign",
-  "reload",
-  "back",
-  "refresh",
-  "navigate",
-  "go",
-]);
-const NAVIGATION_FUNCTION_NAMES = new Set(["navigate", "redirect"]);
-const LOCATION_ASSIGNMENT_PROPERTIES = new Set([
-  "href",
-  "pathname",
-  "hash",
-  "search",
-]);
-
-function memberChainContainsName(node: any, names: Set<string>): boolean {
-  let current = node;
-
-  while (current) {
-    if (current.type === "Identifier") return names.has(current.name);
-    if (current.type !== "MemberExpression" || current.computed) return false;
-    if (
-      current.property?.type === "Identifier" &&
-      names.has(current.property.name)
-    ) {
-      return true;
-    }
-    current = current.object;
-  }
-
-  return false;
-}
-
-function isNavigationCall(callExpressionNode: any): boolean {
-  const callee = callExpressionNode?.callee;
-
-  if (callee?.type === "Identifier") {
-    return NAVIGATION_FUNCTION_NAMES.has(callee.name);
-  }
-
-  if (
-    callee?.type === "MemberExpression" &&
-    callee.computed === false &&
-    callee.property?.type === "Identifier" &&
-    NAVIGATION_METHOD_NAMES.has(callee.property.name)
-  ) {
-    return memberChainContainsName(callee.object, NAVIGATION_OBJECT_NAMES);
-  }
-
-  return false;
-}
-
-function isLocationAssignment(assignmentLeftNode: any): boolean {
-  if (
-    assignmentLeftNode?.type !== "MemberExpression" ||
-    assignmentLeftNode.computed !== false ||
-    assignmentLeftNode.property?.type !== "Identifier" ||
-    !LOCATION_ASSIGNMENT_PROPERTIES.has(assignmentLeftNode.property.name)
-  ) {
-    return false;
-  }
-
-  return memberChainContainsName(
-    assignmentLeftNode.object,
-    new Set(["location"]),
-  );
 }
 
 // Navigation replaces the current view: outcome phases and pending state are

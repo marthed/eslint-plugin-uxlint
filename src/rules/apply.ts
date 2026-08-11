@@ -13,6 +13,10 @@ import { createJSXFormCollector } from "../structure/collectors/jsx-forms";
 import { evaluateFormHasSubmitButNoErrorState } from "../structure/evaluators/form-submit-without-error";
 import { createJSXInputControlsCollector } from "../structure/collectors/jsx-input-controls";
 import { evaluateInputControls } from "../structure/evaluators/input-controls";
+import { createJSXToggleControlsCollector } from "../structure/collectors/jsx-toggle-controls";
+import { evaluateToggleControls } from "../structure/evaluators/toggle-controls";
+import { createJSXSplitButtonsCollector } from "../structure/collectors/jsx-split-buttons";
+import { evaluateSplitButtons } from "../structure/evaluators/split-buttons";
 import { makeInputControlSignals } from "../structure/input-control-signals";
 import { makeFormSignals } from "../structure/form-signals";
 import { createComponentStateCollector } from "../interactions/collectors/component-state";
@@ -54,6 +58,14 @@ const rule: Rule.RuleModule = {
     const store = new StructureFactStore(filename);
     const jsxCollector = createJSXFormCollector(store, projectConfig);
     const inputControlsCollector = createJSXInputControlsCollector(
+      store,
+      projectConfig,
+    );
+    const toggleControlsCollector = createJSXToggleControlsCollector(
+      store,
+      projectConfig,
+    );
+    const splitButtonsCollector = createJSXSplitButtonsCollector(
       store,
       projectConfig,
     );
@@ -160,6 +172,8 @@ const rule: Rule.RuleModule = {
       JSXElement(node: any) {
         jsxCollector.JSXElement(node);
         inputControlsCollector.JSXElement(node);
+        toggleControlsCollector.JSXElement(node);
+        splitButtonsCollector.JSXElement(node);
       },
 
       "JSXElement:exit"(node: any) {
@@ -193,6 +207,21 @@ const rule: Rule.RuleModule = {
           labels,
         );
         for (const finding of inputControlFindings) {
+          reportBuiltinFinding(finding);
+        }
+
+        const toggleFindings = evaluateToggleControls(
+          store.getToggleControls(),
+          forms,
+        );
+        for (const finding of toggleFindings) {
+          reportBuiltinFinding(finding);
+        }
+
+        const splitButtonFindings = evaluateSplitButtons(
+          store.getSplitButtons(),
+        );
+        for (const finding of splitButtonFindings) {
           reportBuiltinFinding(finding);
         }
 

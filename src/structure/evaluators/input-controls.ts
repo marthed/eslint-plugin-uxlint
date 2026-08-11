@@ -16,6 +16,8 @@ const INPUT_MOBILE_001_MESSAGE =
   "[INPUT-MOBILE-001] Input fields should have labels outside the field, not rely on placeholder text.";
 const INPUT_DATE_001_MESSAGE =
   "[INPUT-DATE-001] Avoid split month/day/year dropdowns for date entry; they add interaction cost.";
+const INPUT_DATE_002_MESSAGE =
+  "[INPUT-DATE-002] Text-based date fields should include clear format guidance or use a date picker.";
 
 function uniqueTexts(texts: Array<string | undefined>): string[] {
   return [
@@ -32,7 +34,7 @@ function splitIdRefs(value: string | undefined): string[] {
   );
 }
 
-function getLabelTextsForControl(
+export function getLabelTextsForControl(
   control: NormalizedInputControl,
   labels: NormalizedLabel[],
 ): string[] {
@@ -66,7 +68,7 @@ export function hasUsableAssociatedLabel(
   );
 }
 
-function tokenize(...values: Array<string | undefined>): string[] {
+export function tokenize(...values: Array<string | undefined>): string[] {
   return values
     .filter(Boolean)
     .flatMap((value) =>
@@ -269,6 +271,57 @@ function evaluateSplitDates(
   return findings;
 }
 
+const DATE_NAME_TOKENS = new Set(["date", "dob", "birthdate", "birthday"]);
+
+// Matches format hints like "MM/DD/YYYY", "dd-mm-yyyy", "yyyy.mm.dd".
+const DATE_FORMAT_HINT_PATTERN =
+  /\b(?:mm|dd|yyyy|yy)(?:[/\-.\s]+(?:mm|dd|yyyy|yy)){1,2}\b/i;
+
+function isDateLikeTextField(
+  control: NormalizedInputControl,
+  labels: NormalizedLabel[],
+): boolean {
+  const tokens = tokenize(
+    control.name,
+    control.id,
+    control.componentName,
+    control.labelProp,
+    control.ariaLabel,
+    ...getLabelTextsForControl(control, labels),
+  );
+
+  return tokens.some((token) => DATE_NAME_TOKENS.has(token));
+}
+
+function hasDateFormatHint(
+  control: NormalizedInputControl,
+  labels: NormalizedLabel[],
+): boolean {
+  const candidates = [
+    control.placeholder,
+    ...getLabelTextsForControl(control, labels),
+  ].filter((text): text is string => Boolean(text?.trim()));
+
+  return candidates.some((text) => DATE_FORMAT_HINT_PATTERN.test(text));
+}
+
+function evaluateDateFormatGuidance(
+  controls: NormalizedInputControl[],
+  labels: NormalizedLabel[],
+): StructureFinding[] {
+  return controls
+    .filter(
+      (control) =>
+        control.kind === "text-input" || control.kind === "design-system-field",
+    )
+    .filter((control) => isDateLikeTextField(control, labels))
+    .filter((control) => !hasDateFormatHint(control, labels))
+    .map((control) => ({
+      node: control.node,
+      message: INPUT_DATE_002_MESSAGE,
+    }));
+}
+
 export function evaluateInputControls(
   controls: NormalizedInputControl[],
   labels: NormalizedLabel[],
@@ -278,5 +331,6 @@ export function evaluateInputControls(
     ...evaluateRadioGroups(controls, labels),
     ...evaluatePlaceholderLabels(controls, labels),
     ...evaluateSplitDates(controls, labels),
+    ...evaluateDateFormatGuidance(controls, labels),
   ];
 }

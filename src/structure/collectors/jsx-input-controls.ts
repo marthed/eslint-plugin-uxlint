@@ -14,13 +14,18 @@ function isTextLikeInputType(inputType: string): boolean {
     "button",
     "checkbox",
     "color",
+    "date",
+    "datetime-local",
     "file",
     "hidden",
     "image",
+    "month",
     "radio",
     "range",
     "reset",
     "submit",
+    "time",
+    "week",
   ].includes(inputType);
 }
 

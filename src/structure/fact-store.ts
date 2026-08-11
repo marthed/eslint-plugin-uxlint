@@ -4,13 +4,17 @@ import type {
   NormalizedForm,
   NormalizedInputControl,
   NormalizedLabel,
+  NormalizedSplitButton,
   NormalizedSubmitControl,
+  NormalizedToggleControl,
 } from "./normalized-types";
 
 export class StructureFactStore {
   private forms: NormalizedForm[] = [];
   private inputControls: NormalizedInputControl[] = [];
   private labels: NormalizedLabel[] = [];
+  private toggleControls: NormalizedToggleControl[] = [];
+  private splitButtons: NormalizedSplitButton[] = [];
   private formStack: NormalizedForm[] = [];
   private idCounter = 0;
 
@@ -81,5 +85,21 @@ export class StructureFactStore {
 
   getLabels(): NormalizedLabel[] {
     return this.labels;
+  }
+
+  addToggleControl(control: NormalizedToggleControl) {
+    this.toggleControls.push(control);
+  }
+
+  getToggleControls(): NormalizedToggleControl[] {
+    return this.toggleControls;
+  }
+
+  addSplitButton(splitButton: NormalizedSplitButton) {
+    this.splitButtons.push(splitButton);
+  }
+
+  getSplitButtons(): NormalizedSplitButton[] {
+    return this.splitButtons;
   }
 }

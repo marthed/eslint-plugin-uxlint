@@ -76,9 +76,12 @@ interaction feedback and input controls:
 - **Form feedback** (`FORM-MULTI-001`) — a form with a submit control should
   also expose a detectable error path.
 - **Input controls** (`INPUT-CHOICE-004`, `INPUT-CHOICE-005`,
-  `INPUT-MOBILE-001`, `INPUT-DATE-001`) — structural checks on radio groups,
-  checkbox/radio label association, placeholder-as-label, and split
-  month/day/year date dropdowns.
+  `INPUT-MOBILE-001`, `INPUT-DATE-001`, `INPUT-DATE-002`, `INPUT-TOGGLE-001`,
+  `INPUT-TOGGLE-002`, `INPUT-SPLIT-001`, `INPUT-SPLIT-002`) — structural
+  checks on radio groups, checkbox/radio label association,
+  placeholder-as-label, split month/day/year date dropdowns, missing
+  date-format guidance, non-binary or deferred toggle switches, and
+  split buttons missing a default action or used for navigation.
 
 See [docs/built-in-rule-reference.md](docs/built-in-rule-reference.md) for the
 full reference, and [docs/uxlint-direction.md](docs/uxlint-direction.md) for the
@@ -107,7 +110,8 @@ Built-in rules can recognize your design-system components through
 ```
 
 Each entry in `components` declares what a component is (`role`:
-`"button"`, `"text-input"`, `"textarea"`, or `"select"`) and which props matter:
+`"button"`, `"text-input"`, `"textarea"`, `"select"`, `"switch"`, or
+`"split-button"`) and which props matter:
 
 - `labelProps` — props that provide a visible label (in addition to the
   defaults `label` and `labelText`), used by the input-controls rules
@@ -115,6 +119,13 @@ Each entry in `components` declares what a component is (`role`:
   loading or disabled state (in addition to the defaults `loading`,
   `isLoading`, and `disabled`); interaction rules trust these as visible
   feedback even when the component's implementation cannot be traced
+- `checkedProps` — props carrying a `"switch"` component's bound value (in
+  addition to the defaults `checked`, `isChecked`, `value`, `on`), used by
+  `INPUT-TOGGLE-001`
+- `primaryActionProps` / `menuProps` — props identifying a `"split-button"`
+  component's default action and menu items (in addition to sensible
+  defaults like `onClick`/`label` and `items`/`actions`), used by
+  `INPUT-SPLIT-001`/`INPUT-SPLIT-002`
 
 The older flat `fieldComponents` array keeps working and behaves like a
 `text-input`/`select` role declaration.
