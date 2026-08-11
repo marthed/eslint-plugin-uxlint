@@ -1,7 +1,7 @@
 import type { NormalizedForm } from "../normalized-types";
 import type { InteractionFact } from "../../interactions/evaluators/interaction-feedback";
 
-export type MultiNodeFinding = {
+export type StructureFinding = {
   node: any;
   message: string;
 };
@@ -37,8 +37,8 @@ function submitHandlerShowsErrorFeedback(
 export function evaluateFormHasSubmitButNoErrorState(
   forms: NormalizedForm[],
   interactionFacts: InteractionFact[] = [],
-): MultiNodeFinding[] {
-  const findings: MultiNodeFinding[] = [];
+): StructureFinding[] {
+  const findings: StructureFinding[] = [];
 
   for (const form of forms) {
     const hasSubmit = form.submitControls.length > 0;

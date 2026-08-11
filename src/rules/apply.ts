@@ -8,13 +8,13 @@ import { createComponentVocabulary } from "../shared/design-system";
 import { makeSignals } from "../shared/signals";
 import { evalExpr, type Expr } from "../shared/dsl";
 
-import { MultiNodeFactStore } from "../multi/fact-store";
-import { createJSXFormCollector } from "../multi/collectors/jsx-forms";
-import { evaluateFormHasSubmitButNoErrorState } from "../multi/evaluators/form-submit-without-error";
-import { createJSXInputControlsCollector } from "../multi/collectors/jsx-input-controls";
-import { evaluateInputControls } from "../multi/evaluators/input-controls";
-import { makeInputControlSignals } from "../multi/input-control-signals";
-import { makeFormSignals } from "../multi/form-signals";
+import { StructureFactStore } from "../structure/fact-store";
+import { createJSXFormCollector } from "../structure/collectors/jsx-forms";
+import { evaluateFormHasSubmitButNoErrorState } from "../structure/evaluators/form-submit-without-error";
+import { createJSXInputControlsCollector } from "../structure/collectors/jsx-input-controls";
+import { evaluateInputControls } from "../structure/evaluators/input-controls";
+import { makeInputControlSignals } from "../structure/input-control-signals";
+import { makeFormSignals } from "../structure/form-signals";
 import { createComponentStateCollector } from "../interactions/collectors/component-state";
 import {
   collectInteractionFacts,
@@ -28,7 +28,7 @@ const rule: Rule.RuleModule = {
     type: "problem",
     docs: {
       description:
-        "Apply UX heuristics defined in uxlint rules and multi-node evaluators",
+        "Apply UX heuristics defined in uxlint rules and structural evaluators",
     },
     schema: [],
     messages: {
@@ -51,7 +51,7 @@ const rule: Rule.RuleModule = {
     // same-project checks compare paths in one consistent form.
     const absoluteFilename = path.resolve(cwd, filename);
 
-    const store = new MultiNodeFactStore(filename);
+    const store = new StructureFactStore(filename);
     const jsxCollector = createJSXFormCollector(store, projectConfig);
     const inputControlsCollector = createJSXInputControlsCollector(
       store,
@@ -180,11 +180,11 @@ const rule: Rule.RuleModule = {
         const labels = store.getLabels();
         const interactionFacts = collectInteractionFacts(interactionStore);
 
-        const multiNodeFindings = evaluateFormHasSubmitButNoErrorState(
+        const structureFindings = evaluateFormHasSubmitButNoErrorState(
           forms,
           interactionFacts,
         );
-        for (const finding of multiNodeFindings) {
+        for (const finding of structureFindings) {
           reportBuiltinFinding(finding);
         }
 

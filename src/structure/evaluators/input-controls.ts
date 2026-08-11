@@ -3,7 +3,7 @@ import type {
   NormalizedLabel,
 } from "../normalized-types";
 
-export type MultiNodeFinding = {
+export type StructureFinding = {
   node: any;
   message: string;
 };
@@ -134,7 +134,7 @@ function getDateBase(
 function evaluateChoiceLabels(
   controls: NormalizedInputControl[],
   labels: NormalizedLabel[],
-): MultiNodeFinding[] {
+): StructureFinding[] {
   return controls
     .filter(
       (control) => control.kind === "checkbox" || control.kind === "radio",
@@ -149,7 +149,7 @@ function evaluateChoiceLabels(
 function evaluateRadioGroups(
   controls: NormalizedInputControl[],
   labels: NormalizedLabel[],
-): MultiNodeFinding[] {
+): StructureFinding[] {
   const groups = new Map<string, NormalizedInputControl[]>();
 
   for (const control of controls) {
@@ -162,7 +162,7 @@ function evaluateRadioGroups(
     groups.set(groupKey, existing);
   }
 
-  const findings: MultiNodeFinding[] = [];
+  const findings: StructureFinding[] = [];
 
   for (const group of groups.values()) {
     if (group.length < 2) continue;
@@ -194,7 +194,7 @@ function evaluateRadioGroups(
 function evaluatePlaceholderLabels(
   controls: NormalizedInputControl[],
   labels: NormalizedLabel[],
-): MultiNodeFinding[] {
+): StructureFinding[] {
   return controls
     .filter(
       (control) =>
@@ -217,7 +217,7 @@ function evaluatePlaceholderLabels(
 function evaluateSplitDates(
   controls: NormalizedInputControl[],
   labels: NormalizedLabel[],
-): MultiNodeFinding[] {
+): StructureFinding[] {
   const groups = new Map<
     string,
     { controls: NormalizedInputControl[]; parts: Set<string> }
@@ -251,7 +251,7 @@ function evaluateSplitDates(
     groups.set(groupKey, group);
   }
 
-  const findings: MultiNodeFinding[] = [];
+  const findings: StructureFinding[] = [];
 
   for (const group of groups.values()) {
     if (
@@ -272,7 +272,7 @@ function evaluateSplitDates(
 export function evaluateInputControls(
   controls: NormalizedInputControl[],
   labels: NormalizedLabel[],
-): MultiNodeFinding[] {
+): StructureFinding[] {
   return [
     ...evaluateChoiceLabels(controls, labels),
     ...evaluateRadioGroups(controls, labels),

@@ -3,7 +3,7 @@ import {
   attrText,
   getJSXAttribute,
   getJSXName,
-} from "../../multi/collectors/jsx-helpers";
+} from "../../structure/collectors/jsx-helpers";
 import {
   ProjectFunctionIndex,
   type ParserLike,

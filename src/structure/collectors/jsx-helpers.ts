@@ -3,7 +3,8 @@ export function getJSXName(node: any): string | null {
   if (!nameNode) return null;
 
   if (nameNode.type === "JSXIdentifier") return nameNode.name;
-  if (nameNode.type === "JSXMemberExpression") return nameNode.property?.name ?? null;
+  if (nameNode.type === "JSXMemberExpression")
+    return nameNode.property?.name ?? null;
 
   return null;
 }

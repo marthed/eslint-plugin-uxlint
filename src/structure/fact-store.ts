@@ -7,7 +7,7 @@ import type {
   NormalizedSubmitControl,
 } from "./normalized-types";
 
-export class MultiNodeFactStore {
+export class StructureFactStore {
   private forms: NormalizedForm[] = [];
   private inputControls: NormalizedInputControl[] = [];
   private labels: NormalizedLabel[] = [];

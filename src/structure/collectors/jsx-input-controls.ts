@@ -1,4 +1,4 @@
-import { MultiNodeFactStore } from "../fact-store";
+import { StructureFactStore } from "../fact-store";
 import type { UXLintProjectConfig } from "../../shared/rules-loader";
 import { createComponentVocabulary } from "../../shared/design-system";
 import {
@@ -120,7 +120,7 @@ function getFirstTextAttr(openingEl: any, names: string[]): string | undefined {
 }
 
 export function createJSXInputControlsCollector(
-  store: MultiNodeFactStore,
+  store: StructureFactStore,
   config: UXLintProjectConfig,
 ) {
   const vocabulary = createComponentVocabulary(config.designSystem);

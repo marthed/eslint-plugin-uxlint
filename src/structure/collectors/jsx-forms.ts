@@ -1,4 +1,4 @@
-import { MultiNodeFactStore } from "../fact-store";
+import { StructureFactStore } from "../fact-store";
 import type { UXLintProjectConfig } from "../../shared/rules-loader";
 import { attrText, getJSXName, hasAttr, isLowerTagName } from "./jsx-helpers";
 
@@ -56,7 +56,7 @@ function findErrorStateRead(formNode: any): any | null {
 }
 
 export function createJSXFormCollector(
-  store: MultiNodeFactStore,
+  store: StructureFactStore,
   config: UXLintProjectConfig,
 ) {
   const ds = config.designSystem ?? {};
