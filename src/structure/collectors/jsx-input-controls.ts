@@ -85,13 +85,26 @@ function extractNodeText(node: any): string {
   return normalizeText(parts);
 }
 
-function getWrappingLabelElement(node: any): any | null {
+// Design systems wrap the native element rather than exposing it, so
+// <FieldLabel htmlFor="email"> is the same labelling as <label htmlFor="email">.
+// Without these, every properly labelled design-system field looks unlabelled.
+const DEFAULT_LABEL_COMPONENTS = [
+  "Label",
+  "FormLabel",
+  "FieldLabel",
+  "InputLabel",
+];
+
+function getWrappingLabelElement(
+  node: any,
+  isLabelName: (name: string | null) => boolean,
+): any | null {
   let current = node?.parent;
 
   while (current) {
     if (current.type === "JSXElement") {
       const opening = current.openingElement;
-      if (getJSXName(opening) === "label") return current;
+      if (isLabelName(getJSXName(opening))) return current;
     }
     current = current.parent;
   }
@@ -99,13 +112,16 @@ function getWrappingLabelElement(node: any): any | null {
   return null;
 }
 
-function getContainerKey(node: any): string | undefined {
+function getContainerKey(
+  node: any,
+  isLabelName: (name: string | null) => boolean,
+): string | undefined {
   let current = node?.parent;
 
   while (current) {
     if (current.type === "JSXElement") {
       const opening = current.openingElement;
-      if (getJSXName(opening) !== "label") {
+      if (!isLabelName(getJSXName(opening))) {
         return getElementKey(current);
       }
     }
@@ -129,6 +145,12 @@ export function createJSXInputControlsCollector(
   config: UXLintProjectConfig,
 ) {
   const vocabulary = createComponentVocabulary(config.designSystem);
+  const labelComponents =
+    config.designSystem?.labelComponents ?? DEFAULT_LABEL_COMPONENTS;
+
+  function isLabelName(name: string | null): boolean {
+    return name === "label" || (!!name && labelComponents.includes(name));
+  }
 
   function JSXElement(node: any) {
     const opening = node.openingElement;
@@ -137,7 +159,7 @@ export function createJSXInputControlsCollector(
     const name = getJSXName(opening);
     const formId = store.currentForm()?.id;
 
-    if (name === "label") {
+    if (isLabelName(name)) {
       store.addLabel({
         node,
         id: attrText(opening, "id") ?? undefined,
@@ -148,11 +170,11 @@ export function createJSXInputControlsCollector(
       return;
     }
 
-    const wrappingLabel = getWrappingLabelElement(node);
+    const wrappingLabel = getWrappingLabelElement(node, isLabelName);
     const wrappingLabelText = wrappingLabel
       ? extractNodeText(wrappingLabel)
       : undefined;
-    const containerKey = getContainerKey(node);
+    const containerKey = getContainerKey(node, isLabelName);
     const isWrappedByLabel = Boolean(wrappingLabel);
 
     if (name === "input") {
@@ -234,6 +256,12 @@ export function createJSXInputControlsCollector(
       ? undefined
       : vocabulary.getFieldRole(name);
     if (!fieldRole) return;
+
+    // Design-system fields usually forward `type` to a native input, so
+    // <TextInput type="date" /> is a native date control wearing a component
+    // name and should be treated exactly like <input type="date" />.
+    const forwardedType = attrText(opening, "type")?.toLowerCase();
+    if (forwardedType && !isTextLikeInputType(forwardedType)) return;
 
     const labelProp =
       getFirstTextAttr(opening, vocabulary.getLabelProps(name)) ?? undefined;

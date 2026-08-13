@@ -195,3 +195,92 @@ serialTest(
     assert.deepEqual(lintIds(code), []);
   },
 );
+
+// Design systems wrap the native <label>, so a field labelled by
+// <FieldLabel htmlFor> would otherwise look like placeholder-as-label.
+serialTest("treats design-system label components like a native label", () => {
+  const code = `
+      function LabelledByComponent() {
+        return (
+          <div>
+            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <Input id="email" placeholder="you@example.com" />
+          </div>
+        );
+      }
+    `;
+
+  const ids = warningIds(
+    lintWithApplyRule(code, {
+      uxlintFile: {
+        version: 1,
+        config: {
+          designSystem: { fieldComponents: ["Input"] },
+        },
+        rules: [],
+      },
+    }),
+  );
+
+  assert.deepEqual(ids, []);
+});
+
+serialTest(
+  "reports INPUT-MOBILE-001 when the label component is not configured",
+  () => {
+    const code = `
+      function LabelledByUnknownComponent() {
+        return (
+          <div>
+            <Caption htmlFor="email">Email</Caption>
+            <Input id="email" placeholder="you@example.com" />
+          </div>
+        );
+      }
+    `;
+
+    const ids = warningIds(
+      lintWithApplyRule(code, {
+        uxlintFile: {
+          version: 1,
+          config: {
+            designSystem: {
+              fieldComponents: ["Input"],
+              labelComponents: ["FieldLabel"],
+            },
+          },
+          rules: [],
+        },
+      }),
+    );
+
+    assert.deepEqual(ids, [IDS.inputMobile001]);
+  },
+);
+
+// <TextInput type="date" /> forwards type to a native date input, which has
+// its own format affordance, so it is excluded like <input type="date" />.
+serialTest(
+  "does not report date guidance for a design-system field forwarding type=date",
+  () => {
+    const code = `
+      function ForwardedDateType() {
+        return <TextInput type="date" label="Birth date" placeholder="Birth date" />;
+      }
+    `;
+
+    const ids = warningIds(
+      lintWithApplyRule(code, {
+        uxlintFile: {
+          version: 1,
+          config: {
+            designSystem: { fieldComponents: ["TextInput"] },
+          },
+          rules: [],
+        },
+      }),
+    );
+
+    assert.deepEqual(ids, []);
+  },
+);
