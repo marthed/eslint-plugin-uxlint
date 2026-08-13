@@ -10,17 +10,25 @@
 //   --rule <ID>        Only report this rule id, repeatable. Useful when
 //                      investigating whether a specific rule fires at all.
 //   --samples <n>      Sample locations to print per rule (default: 5)
+//   --configured       Install benchmarks/configs/<target>.json as the
+//                      target's uxlint.rules.json for the run. Rules that
+//                      need a component vocabulary (INPUT-TOGGLE-*,
+//                      INPUT-SPLIT-*, design-system INPUT-DATE-*) cannot fire
+//                      without it.
 //
 // Examples:
 //   node benchmarks/noise-benchmark.mjs ../scratch/excalidraw
 //   node benchmarks/noise-benchmark.mjs ../scratch/* --rule INPUT-TOGGLE-001
+//   node benchmarks/noise-benchmark.mjs ../scratch/ui --configured
 //
-// Targets are linted without a uxlint.rules.json, so only built-in rules
-// fire, and inline eslint-disable comments are ignored to measure the raw
-// signal. See docs/noise-benchmark.md for the recorded baseline.
+// Unconfigured is the default so the baseline stays comparable: only built-in
+// rules fire, and inline eslint-disable comments are ignored to measure the
+// raw signal. See docs/noise-benchmark.md for the recorded baselines.
 
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
 import tsParser from "@typescript-eslint/parser";
 import uxlintModule from "../dist/index.js";
@@ -29,12 +37,17 @@ const uxlint = uxlintModule.default ?? uxlintModule;
 
 const RULE_ID_PATTERN = /^\[([A-Z0-9-]+)\]/;
 const DEFAULT_GLOBS = ["**/*.{tsx,jsx}"];
+const CONFIG_DIR = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "configs",
+);
 
 function parseArgs(argv) {
   const targets = [];
   const globs = [];
   const ruleFilter = new Set();
   let samples = 5;
+  let configured = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -44,6 +57,8 @@ function parseArgs(argv) {
       ruleFilter.add(argv[++index]);
     } else if (arg === "--samples") {
       samples = Number(argv[++index]) || 0;
+    } else if (arg === "--configured") {
+      configured = true;
     } else {
       targets.push(arg);
     }
@@ -54,10 +69,46 @@ function parseArgs(argv) {
     globs: globs.length > 0 ? globs : DEFAULT_GLOBS,
     ruleFilter,
     samples,
+    configured,
   };
 }
 
-async function lintTarget(targetDir, globs, ruleFilter) {
+// Installs benchmarks/configs/<target>.json as the target's uxlint.rules.json
+// and returns a function that removes it again. Refuses to touch a target that
+// already has one, so a real config is never clobbered.
+function installConfig(targetDir) {
+  const source = path.join(CONFIG_DIR, `${path.basename(targetDir)}.json`);
+  if (!fs.existsSync(source)) return { installed: false, remove: () => {} };
+
+  const destination = path.join(targetDir, "uxlint.rules.json");
+  if (fs.existsSync(destination)) {
+    throw new Error(
+      `${destination} already exists; refusing to overwrite it. ` +
+        "Remove it or run without --configured.",
+    );
+  }
+
+  fs.copyFileSync(source, destination);
+  return {
+    installed: true,
+    remove: () => fs.rmSync(destination, { force: true }),
+  };
+}
+
+async function lintTarget(targetDir, globs, ruleFilter, configured) {
+  const config = configured
+    ? installConfig(targetDir)
+    : { installed: false, remove: () => {} };
+
+  try {
+    const report = await lintTargetFiles(targetDir, globs, ruleFilter);
+    return { ...report, configured: config.installed };
+  } finally {
+    config.remove();
+  }
+}
+
+async function lintTargetFiles(targetDir, globs, ruleFilter) {
   const eslint = new ESLint({
     cwd: targetDir,
     allowInlineConfig: false,
@@ -135,7 +186,9 @@ function reportTarget(report, samples) {
   );
   const total = sorted.reduce((sum, [, count]) => sum + count, 0);
 
-  console.log(`\n=== ${report.name} ===`);
+  console.log(
+    `\n=== ${report.name}${report.configured ? " (configured)" : ""} ===`,
+  );
   console.log(
     `${report.filesLinted} files linted, ${report.filesWithFindings} with findings, ` +
       `${report.fatalErrors} parse failures, ${report.elapsedSeconds.toFixed(1)}s`,
@@ -196,20 +249,23 @@ function reportCombined(reports) {
 }
 
 async function main() {
-  const { targets, globs, ruleFilter, samples } = parseArgs(
+  const { targets, globs, ruleFilter, samples, configured } = parseArgs(
     process.argv.slice(2),
   );
 
   if (targets.length === 0) {
     console.error(
-      "Usage: node benchmarks/noise-benchmark.mjs <targetDir> [targetDir...] [--glob p] [--rule ID] [--samples n]",
+      "Usage: node benchmarks/noise-benchmark.mjs <targetDir> [targetDir...] " +
+        "[--glob p] [--rule ID] [--samples n] [--configured]",
     );
     process.exit(1);
   }
 
   const reports = [];
   for (const target of targets) {
-    reports.push(await lintTarget(path.resolve(target), globs, ruleFilter));
+    reports.push(
+      await lintTarget(path.resolve(target), globs, ruleFilter, configured),
+    );
   }
 
   for (const report of reports) {

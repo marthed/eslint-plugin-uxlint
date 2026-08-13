@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "config": {
+    "designSystem": {
+      "fieldComponents": ["Input", "Textarea"],
+      "components": {
+        "Switch": { "role": "switch" },
+        "Input": { "role": "text-input" },
+        "Textarea": { "role": "textarea" },
+        "Button": { "role": "button", "loadingProps": ["isLoading"] }
+      },
+      "feedbackFunctions": ["toast"]
+    }
+  },
+  "rules": []
+}

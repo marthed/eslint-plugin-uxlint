@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "config": {
+    "designSystem": {
+      "fieldComponents": [
+        "TextInput",
+        "Textarea",
+        "Select",
+        "NativeSelect",
+        "MultiSelect",
+        "Autocomplete",
+        "NumberInput",
+        "PasswordInput",
+        "MaskInput",
+        "JsonInput",
+        "TagsInput",
+        "DateInput"
+      ],
+      "fieldErrorProps": ["error"],
+      "errorComponents": ["Alert"],
+      "components": {
+        "Switch": { "role": "switch" },
+        "TextInput": { "role": "text-input" },
+        "MaskInput": { "role": "text-input" },
+        "PasswordInput": { "role": "text-input" },
+        "DateInput": { "role": "text-input" },
+        "Textarea": { "role": "textarea" },
+        "Select": { "role": "select" },
+        "NativeSelect": { "role": "select" },
+        "Button": { "role": "button" }
+      },
+      "feedbackFunctions": ["notifications", "showNotification"]
+    }
+  },
+  "rules": []
+}

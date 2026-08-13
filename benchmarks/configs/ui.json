@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "config": {
+    "designSystem": {
+      "formComponents": ["Form"],
+      "fieldComponents": ["Input", "Textarea", "InputOTP", "NativeSelect"],
+      "errorComponents": ["FormMessage", "FieldError"],
+      "components": {
+        "Switch": { "role": "switch" },
+        "Input": { "role": "text-input" },
+        "Textarea": { "role": "textarea" },
+        "NativeSelect": { "role": "select" },
+        "Button": { "role": "button" }
+      },
+      "feedbackFunctions": ["toast", "sonner"]
+    }
+  },
+  "rules": []
+}
