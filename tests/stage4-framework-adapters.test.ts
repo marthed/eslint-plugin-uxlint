@@ -169,10 +169,8 @@ serialTest(
   },
 );
 
-serialTest(
-  "Zustand: missing pending feedback reports a start warning",
-  () => {
-    const code = `
+serialTest("Zustand: missing pending feedback reports a start warning", () => {
+  const code = `
       function ZustandMissingPending() {
         const saveProfile = useAppStore((store) => store.saveProfile);
         const saveError = useAppStore((store) => store.saveError);
@@ -194,6 +192,85 @@ serialTest(
       }
     `;
 
-    assert.deepEqual(lintIds(code), [IDS.asyncStart]);
+  assert.deepEqual(lintIds(code), [IDS.asyncStart]);
+});
+
+// tRPC and other generated clients expose useMutation through a member path
+// (trpc.admin.document.delete.useMutation()), not as a bare identifier.
+serialTest(
+  "tRPC: a member-path useMutation still provides a status model",
+  () => {
+    const code = `
+      import { trpc } from "@documenso/trpc/react";
+
+      function DeleteDialog({ id }) {
+        const { mutateAsync: deleteDocument, isPending } =
+          trpc.admin.document.delete.useMutation();
+
+        const handleDelete = async () => {
+          try {
+            await deleteDocument({ id });
+            toast({ title: "Deleted" });
+          } catch {
+            toast({ title: "Failed", variant: "destructive" });
+          }
+        };
+
+        return <Button loading={isPending} onClick={handleDelete}>Delete</Button>;
+      }
+    `;
+
+    assert.deepEqual(lintIds(code), []);
   },
 );
+
+// Feedback commonly lives in the mutation's lifecycle options rather than in
+// the handler that calls mutateAsync.
+serialTest(
+  "React Query: onSuccess and onError callbacks count as phase feedback",
+  () => {
+    const code = `
+      function ClaimDeleteDialog({ id }) {
+        const { mutateAsync: deleteClaim, isPending } = trpc.admin.claims.delete.useMutation({
+          onSuccess: () => {
+            toast({ title: "Deleted successfully" });
+          },
+          onError: () => {
+            toast({ title: "Failed to delete", variant: "destructive" });
+          },
+        });
+
+        return (
+          <Button loading={isPending} onClick={async () => deleteClaim({ id })}>
+            Delete
+          </Button>
+        );
+      }
+    `;
+
+    assert.deepEqual(lintIds(code), []);
+  },
+);
+
+serialTest("React Query: an onError that only logs is not feedback", () => {
+  const code = `
+      function SilentDialog({ id }) {
+        const { mutateAsync: deleteClaim, isPending } = trpc.admin.claims.delete.useMutation({
+          onSuccess: () => {
+            toast({ title: "Deleted successfully" });
+          },
+          onError: (err) => {
+            console.error(err);
+          },
+        });
+
+        return (
+          <Button loading={isPending} onClick={async () => deleteClaim({ id })}>
+            Delete
+          </Button>
+        );
+      }
+    `;
+
+  assert.deepEqual(lintIds(code), [IDS.asyncError]);
+});

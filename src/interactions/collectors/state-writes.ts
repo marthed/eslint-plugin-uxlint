@@ -238,6 +238,101 @@ export function collectStateWritesForHandler(
   const externalWriteKeys = new Set<string>();
   const rootPhaseContext = createWritePhaseContext(handler.node, null, null);
 
+  // React Query and tRPC mutations usually put their feedback in the hook's
+  // lifecycle options rather than in the handler that calls mutateAsync:
+  //
+  //   const { mutateAsync: del } = trpc.x.delete.useMutation({
+  //     onSuccess: () => toast({ title: 'Deleted' }),
+  //     onError: () => toast({ variant: 'destructive' }),
+  //   });
+  //
+  // Credit that feedback to the phase the callback runs in. The phase is known
+  // from the option name, so no positional classification is needed.
+  function collectLifecycleCallbackWrites(
+    callNode: any,
+    calleeName: string | null,
+    setterAliases: Map<string, string>,
+  ): StateWrite[] {
+    const triggerKeys: string[] = [];
+    if (calleeName) triggerKeys.push(calleeName);
+
+    const callee = callNode.callee;
+    if (
+      callee?.type === "MemberExpression" &&
+      callee.computed === false &&
+      callee.object?.type === "Identifier" &&
+      callee.property?.type === "Identifier"
+    ) {
+      triggerKeys.push(`${callee.object.name}.${callee.property.name}`);
+    }
+
+    const writes: StateWrite[] = [];
+
+    for (const triggerKey of triggerKeys) {
+      const callbacks =
+        externalStatusModel.lifecycleCallbacksByTrigger.get(triggerKey);
+      if (!callbacks) continue;
+
+      for (const callback of callbacks) {
+        walkAst(callback.node.body ?? callback.node, (inner: any) => {
+          if (inner?.type === "AssignmentExpression") {
+            if (isLocationAssignment(inner.left)) {
+              writes.push({
+                handlerId: handler.id,
+                stateVar: NAVIGATION_FEEDBACK_STATE_VAR,
+                setterVar: "location",
+                phase: callback.phase,
+                node: inner,
+              });
+            }
+            return;
+          }
+
+          if (inner?.type !== "CallExpression") return;
+
+          const innerCalleeName =
+            inner.callee?.type === "Identifier" ? inner.callee.name : null;
+          const innerTargetName = getCallTargetName(inner.callee);
+
+          const stateVar = innerCalleeName
+            ? setterAliases.get(innerCalleeName)
+            : undefined;
+          if (stateVar) {
+            writes.push({
+              handlerId: handler.id,
+              stateVar,
+              setterVar: innerTargetName,
+              phase: callback.phase,
+              node: inner,
+            });
+          }
+
+          if (getFeedbackCallMatch(inner, feedbackFunctionNames)) {
+            writes.push({
+              handlerId: handler.id,
+              stateVar: IMPERATIVE_FEEDBACK_STATE_VAR,
+              setterVar: innerTargetName,
+              phase: callback.phase,
+              node: inner,
+            });
+          }
+
+          if (isNavigationCall(inner)) {
+            writes.push({
+              handlerId: handler.id,
+              stateVar: NAVIGATION_FEEDBACK_STATE_VAR,
+              setterVar: innerTargetName,
+              phase: callback.phase,
+              node: inner,
+            });
+          }
+        });
+      }
+    }
+
+    return writes;
+  }
+
   function collectWritesFromFunction(
     functionNode: any,
     functionFilePath: string,
@@ -358,6 +453,12 @@ export function collectStateWritesForHandler(
             triggeredStateVars.add(triggeredStateVar);
           }
         }
+
+        collectLifecycleCallbackWrites(
+          current,
+          calleeName,
+          setterAliases,
+        ).forEach((write) => writes.push(write));
 
         for (const triggeredStateVar of triggeredStateVars) {
           const phases =

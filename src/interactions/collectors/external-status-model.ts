@@ -10,11 +10,28 @@ import {
   walkAst,
 } from "./ast-helpers";
 
+// A mutation's onSuccess/onError/onSettled/onMutate option, where the feedback
+// for that phase very often lives instead of in the calling handler.
+export type LifecycleCallback = {
+  phase: InteractionPhase;
+  node: any;
+};
+
 export type ExternalStatusModel = {
   observableStateVars: Set<string>;
   statusPhasesByStateVar: Map<string, Set<InteractionPhase>>;
   triggerStateVarsByIdentifier: Map<string, Set<string>>;
   triggerStateVarsByMember: Map<string, Map<string, Set<string>>>;
+  // Keyed by trigger identifier (`deleteClaim`) or `object.method`
+  // (`deleteMutation.mutateAsync`).
+  lifecycleCallbacksByTrigger: Map<string, LifecycleCallback[]>;
+};
+
+const LIFECYCLE_OPTION_PHASES: Record<string, InteractionPhase> = {
+  onMutate: "start",
+  onSuccess: "success",
+  onError: "error",
+  onSettled: "settled",
 };
 
 const PENDING_NAME_HINT =
@@ -32,7 +49,53 @@ function createExternalStatusModel(): ExternalStatusModel {
     statusPhasesByStateVar: new Map<string, Set<InteractionPhase>>(),
     triggerStateVarsByIdentifier: new Map<string, Set<string>>(),
     triggerStateVarsByMember: new Map<string, Map<string, Set<string>>>(),
+    lifecycleCallbacksByTrigger: new Map<string, LifecycleCallback[]>(),
   };
+}
+
+// Reads the options object of a useMutation call: useMutation({ onSuccess })
+// for a bare hook, useMutation(fn, { onSuccess }) for the positional form.
+function getLifecycleCallbacks(callNode: any): LifecycleCallback[] {
+  const callbacks: LifecycleCallback[] = [];
+
+  for (const argument of callNode.arguments ?? []) {
+    if (argument?.type !== "ObjectExpression") continue;
+
+    for (const property of argument.properties ?? []) {
+      if (property?.type !== "Property" || property.computed) continue;
+
+      const keyName =
+        property.key?.type === "Identifier"
+          ? property.key.name
+          : property.key?.type === "Literal"
+            ? String(property.key.value)
+            : null;
+      const phase = keyName ? LIFECYCLE_OPTION_PHASES[keyName] : undefined;
+      if (!phase) continue;
+
+      const value = property.value;
+      if (
+        value?.type === "ArrowFunctionExpression" ||
+        value?.type === "FunctionExpression"
+      ) {
+        callbacks.push({ phase, node: value });
+      }
+    }
+  }
+
+  return callbacks;
+}
+
+function addLifecycleCallbacks(
+  model: ExternalStatusModel,
+  triggerKey: string,
+  callbacks: LifecycleCallback[],
+) {
+  if (callbacks.length === 0) return;
+
+  const existing = model.lifecycleCallbacksByTrigger.get(triggerKey) ?? [];
+  existing.push(...callbacks);
+  model.lifecycleCallbacksByTrigger.set(triggerKey, existing);
 }
 
 function addStatusPhases(
@@ -115,10 +178,22 @@ function getStatusPhasesFromName(name: string): Set<InteractionPhase> {
   return phases;
 }
 
+// Matches `useMutation()` and any member-expression path ending in it, so
+// tRPC's `trpc.admin.document.delete.useMutation()` and similar generated
+// clients (`api.users.create.useMutation()`) are recognized too. Without
+// this, every tRPC mutation looks like an interaction with no status model.
 function isUseMutationCallExpression(node: any): boolean {
-  return node?.type === "CallExpression" && node.callee?.type === "Identifier"
-    ? node.callee.name === "useMutation"
-    : false;
+  if (node?.type !== "CallExpression") return false;
+
+  const callee = node.callee;
+  if (callee?.type === "Identifier") return callee.name === "useMutation";
+
+  return (
+    callee?.type === "MemberExpression" &&
+    callee.computed === false &&
+    callee.property?.type === "Identifier" &&
+    callee.property.name === "useMutation"
+  );
 }
 
 function isUseSelectorCallExpression(node: any): boolean {
@@ -195,6 +270,8 @@ export function collectExternalStatusModel(
       if (current.init?.type !== "CallExpression") return;
 
       if (isUseMutationCallExpression(current.init)) {
+        const lifecycleCallbacks = getLifecycleCallbacks(current.init);
+
         if (current.id?.type === "ObjectPattern") {
           const mutationStatusStateVars = new Set<string>();
           const mutationTriggerNames = new Set<string>();
@@ -220,6 +297,7 @@ export function collectExternalStatusModel(
 
           for (const triggerName of mutationTriggerNames) {
             addTriggerIdentifier(model, triggerName, mutationStatusStateVars);
+            addLifecycleCallbacks(model, triggerName, lifecycleCallbacks);
           }
         }
 
@@ -259,6 +337,14 @@ export function collectExternalStatusModel(
             "mutateAsync",
             memberStatusStateVars,
           );
+
+          for (const method of ["mutate", "mutateAsync"]) {
+            addLifecycleCallbacks(
+              model,
+              `${mutationObjectName}.${method}`,
+              lifecycleCallbacks,
+            );
+          }
         }
 
         return;

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "config": {
+    "designSystem": {
+      "components": {
+        "Switch": { "role": "switch" },
+        "Button": { "role": "button", "loadingProps": ["loading"] }
+      },
+      "feedbackFunctions": ["toast"]
+    }
+  },
+  "rules": []
+}

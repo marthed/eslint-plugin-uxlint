@@ -13,6 +13,19 @@ unconfigured leaves them unmeasured rather than clean.
 Each mapping is grounded in what the library actually exports, not in guessed
 names:
 
+Applications:
+
+- **documenso** — shadcn-derived primitives in `packages/ui/primitives`, with
+  `FormMessage` / `FormErrorMessage` as the error surface.
+- **formbricks** — shadcn-derived components in
+  `apps/web/modules/ui/components`.
+- **dub** — deliberately minimal. Dub's inputs are bespoke per feature
+  (`AmountInput`, `ShortLinkInput`, …) rather than one shared field component,
+  so only `Switch` and `Button` are declared. Declaring guessed field names
+  would measure the guess, not the app.
+
+Component libraries:
+
 - **ui** — shadcn/ui. `Switch` wraps Radix's switch primitive and is the only
   switch. `Toggle` is Radix's _toggle button_ (`aria-pressed`), a different
   control, so it is deliberately not declared as a switch.

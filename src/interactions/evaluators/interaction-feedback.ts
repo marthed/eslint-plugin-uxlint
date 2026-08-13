@@ -476,10 +476,7 @@ export function evaluateInteractionFactFindings(
 
       // When no pending cue is ever shown there is nothing to clear; the
       // start finding already covers this interaction's pending problem.
-      if (
-        requirement.phase === "settled" &&
-        !fact.visiblePhases.has("start")
-      ) {
+      if (requirement.phase === "settled" && !fact.visiblePhases.has("start")) {
         continue;
       }
 

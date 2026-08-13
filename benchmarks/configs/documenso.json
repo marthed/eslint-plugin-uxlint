@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "config": {
+    "designSystem": {
+      "formComponents": ["Form"],
+      "fieldComponents": ["Input", "Textarea", "PasswordInput", "PinInput"],
+      "errorComponents": ["FormMessage", "FormErrorMessage"],
+      "components": {
+        "Switch": { "role": "switch" },
+        "Input": { "role": "text-input" },
+        "PasswordInput": { "role": "text-input" },
+        "Textarea": { "role": "textarea" },
+        "Select": { "role": "select" },
+        "Button": { "role": "button", "loadingProps": ["loading"] }
+      },
+      "feedbackFunctions": ["toast"]
+    }
+  },
+  "rules": []
+}

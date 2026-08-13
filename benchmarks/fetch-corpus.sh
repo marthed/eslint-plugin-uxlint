@@ -19,11 +19,22 @@ set -euo pipefail
 CORPUS="${UXLINT_CORPUS:-$HOME/.cache/uxlint-benchmark-corpus}"
 
 REPOS=(
+  # Applications. The configured axis is only meaningful on these: they use a
+  # design system rather than documenting one, so their fields are real UI
+  # instead of deliberately minimal demos.
+  "documenso/documenso"
+  "formbricks/formbricks"
+  "dubinc/dub"
+
+  # Applications without a mapped vocabulary.
   "shadcn-ui/taxonomy"
   "excalidraw/excalidraw"
+  "vercel/commerce"
+
+  # Component libraries. Useful for breadth and parse coverage, but their
+  # documentation demos dominate any configured measurement.
   "shadcn-ui/ui"
   "mantinedev/mantine"
-  "vercel/commerce"
 )
 
 mkdir -p "$CORPUS"
