@@ -13,6 +13,10 @@
 // function. Anything else — a prop, a member expression, a non-literal
 // initializer — is left "unknown" and not reported, per the fail-safe
 // philosophy the rest of the DSL and built-in rules follow.
+//
+// The same identifier is also checked against the rest of the enclosing form,
+// to tell a deferred setting apart from a progressive-disclosure control that
+// simply reveals more fields.
 
 import { StructureFactStore } from "../fact-store";
 import type { UXLintProjectConfig } from "../../shared/rules-loader";
@@ -120,6 +124,92 @@ function classifyInitializerShape(
   return "unknown";
 }
 
+function referencesIdentifier(node: any, name: string): boolean {
+  let found = false;
+
+  function visit(current: any) {
+    if (found || !current || typeof current.type !== "string") return;
+
+    if (current.type === "Identifier" && current.name === name) {
+      // Skip `obj.name`, where the identifier is a property key rather than
+      // a read of the state variable.
+      const parent = current.parent;
+      if (
+        parent?.type === "MemberExpression" &&
+        parent.property === current &&
+        parent.computed === false
+      ) {
+        return;
+      }
+
+      found = true;
+      return;
+    }
+
+    for (const key of Object.keys(current)) {
+      if (key === "parent") continue;
+      const value = current[key];
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          if (entry && typeof entry === "object") visit(entry);
+        }
+      } else if (value && typeof value === "object") {
+        visit(value);
+      }
+    }
+  }
+
+  visit(node);
+  return found;
+}
+
+// A switch that gates other content in its own form is progressive
+// disclosure, not a setting whose effect is deferred until Submit: flipping
+// it changes the form immediately. Looks for the bound state in a condition
+// position — `{open && <Fields />}` or `height: open ? "auto" : 0` — anywhere
+// in the form except the toggle's own markup.
+function controlsConditionalRenderInForm(
+  formNode: any,
+  toggleNode: any,
+  stateVarName: string,
+): boolean {
+  if (!formNode) return false;
+
+  let found = false;
+
+  function visit(current: any) {
+    if (found || !current || typeof current.type !== "string") return;
+    if (current === toggleNode) return;
+
+    const conditionNode =
+      current.type === "ConditionalExpression"
+        ? current.test
+        : current.type === "LogicalExpression"
+          ? current.left
+          : null;
+
+    if (conditionNode && referencesIdentifier(conditionNode, stateVarName)) {
+      found = true;
+      return;
+    }
+
+    for (const key of Object.keys(current)) {
+      if (key === "parent") continue;
+      const value = current[key];
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          if (entry && typeof entry === "object") visit(entry);
+        }
+      } else if (value && typeof value === "object") {
+        visit(value);
+      }
+    }
+  }
+
+  visit(formNode);
+  return found;
+}
+
 export function createJSXToggleControlsCollector(
   store: StructureFactStore,
   config: UXLintProjectConfig,
@@ -150,19 +240,30 @@ export function createJSXToggleControlsCollector(
       .find(Boolean);
     const checkedExpression = checkedAttr?.value?.expression;
 
+    const currentForm = store.currentForm();
+
     let boundValueShape: "boolean" | "non-boolean" | "unknown" = "unknown";
+    let controlsConditionalRender = false;
+
     if (checkedExpression?.type === "Identifier") {
       const functionBody = findEnclosingFunctionBody(node);
       const initializer = functionBody
         ? findLocalUseStateInitializer(functionBody, checkedExpression.name)
         : undefined;
       boundValueShape = classifyInitializerShape(initializer);
+
+      controlsConditionalRender = controlsConditionalRenderInForm(
+        currentForm?.node,
+        node,
+        checkedExpression.name,
+      );
     }
 
     store.addToggleControl({
       node,
-      formId: store.currentForm()?.id,
+      formId: currentForm?.id,
       boundValueShape,
+      controlsConditionalRender,
     });
   }
 

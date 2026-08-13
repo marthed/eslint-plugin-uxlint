@@ -85,6 +85,9 @@ export type NormalizedForm = {
 export type NormalizedToggleControl = {
   node: any;
   formId?: string;
+  // True when the toggle's bound state is the condition for other content in
+  // the same form: progressive disclosure rather than a deferred setting.
+  controlsConditionalRender: boolean;
   // "unknown" when the bound value can't be statically classified (not a
   // simple local identifier, no local useState found, or a non-literal
   // initializer) — the rule stays silent rather than guessing.

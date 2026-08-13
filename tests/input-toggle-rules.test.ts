@@ -250,3 +250,88 @@ serialTest(
     assert.deepEqual(ids, [TOGGLE_002]);
   },
 );
+
+// A switch that reveals more of the form already takes effect immediately,
+// so INPUT-TOGGLE-002's "changes are deferred" premise does not hold.
+serialTest(
+  "INPUT-TOGGLE-002 exempts a switch that gates conditional content",
+  () => {
+    const code = `
+    import React from "react";
+
+    function BountyForm() {
+      const [hasStartDate, setHasStartDate] = React.useState(false);
+
+      return (
+        <form onSubmit={save}>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={hasStartDate}
+            onChange={() => setHasStartDate(!hasStartDate)}
+          />
+          {hasStartDate && <input type="date" name="startsAt" />}
+          <button type="submit">Save</button>
+        </form>
+      );
+    }
+  `;
+
+    assert.deepEqual(lintToggleFixture(code), []);
+  },
+);
+
+serialTest("INPUT-TOGGLE-002 exempts a ternary-driven disclosure", () => {
+  const code = `
+    import React from "react";
+
+    function BountyForm() {
+      const [hasStartDate, setHasStartDate] = React.useState(false);
+
+      return (
+        <form onSubmit={save}>
+          <div style={{ height: hasStartDate ? "auto" : "0px" }}>
+            <input type="date" name="startsAt" />
+          </div>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={hasStartDate}
+            onChange={() => setHasStartDate(!hasStartDate)}
+          />
+          <button type="submit">Save</button>
+        </form>
+      );
+    }
+  `;
+
+  assert.deepEqual(lintToggleFixture(code), []);
+});
+
+serialTest(
+  "INPUT-TOGGLE-002 still reports a switch that only holds a setting",
+  () => {
+    const code = `
+    import React from "react";
+
+    function SettingsForm() {
+      const [emailAlerts, setEmailAlerts] = React.useState(false);
+
+      return (
+        <form onSubmit={save}>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={emailAlerts}
+            onChange={() => setEmailAlerts(!emailAlerts)}
+          />
+          <input name="displayName" />
+          <button type="submit">Save</button>
+        </form>
+      );
+    }
+  `;
+
+    assert.deepEqual(lintToggleFixture(code), [TOGGLE_002]);
+  },
+);

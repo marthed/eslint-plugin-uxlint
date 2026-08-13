@@ -33,6 +33,9 @@ function evaluateDeferredToggles(
   return toggles
     .filter((toggle) => {
       if (!toggle.formId) return false;
+      // Progressive disclosure: the switch already takes effect immediately
+      // by changing what the form shows.
+      if (toggle.controlsConditionalRender) return false;
       const form = formsById.get(toggle.formId);
       return Boolean(form && form.submitControls.length > 0);
     })
