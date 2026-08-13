@@ -451,8 +451,105 @@ serialTest(
     const code = `
     function FormMissingErrorState() {
       return (
+        <form action="/save">
+          <input name="email" />
+          <button type="submit">Save</button>
+        </form>
+      );
+    }
+  `;
+
+    assert.deepEqual(lintIds(code), [IDS.formMulti]);
+  },
+);
+
+serialTest(
+  "does not report FORM-MULTI-001 for a form that cannot submit anything",
+  () => {
+    // A layout-only demo form: submit-typed button, but no handler, no
+    // action, no method. There is no failure path, so no error UI is owed.
+    const code = `
+    function DialogDemo() {
+      return (
         <form>
           <input name="email" />
+          <button type="submit">Save</button>
+        </form>
+      );
+    }
+  `;
+
+    assert.deepEqual(lintIds(code), []);
+  },
+);
+
+serialTest(
+  "reports FORM-MULTI-001 when only the submit control carries the handler",
+  () => {
+    const code = `
+    function FormWithClickSubmit() {
+      return (
+        <form>
+          <input name="email" />
+          <button type="submit" onClick={save}>Save</button>
+        </form>
+      );
+    }
+  `;
+
+    assert.deepEqual(lintIds(code), [IDS.formMulti]);
+  },
+);
+
+serialTest(
+  "still reports FORM-MULTI-001 when a spread may carry the submit handler",
+  () => {
+    // The exemption needs proof that the form cannot submit. {...formProps}
+    // could carry onSubmit, so absence is unproven and the rule still applies.
+    const code = `
+    function SpreadForm(formProps) {
+      return (
+        <form {...formProps}>
+          <input name="email" />
+          <button type="submit">Save</button>
+        </form>
+      );
+    }
+  `;
+
+    assert.deepEqual(lintIds(code), [IDS.formMulti]);
+  },
+);
+
+serialTest(
+  "does not report FORM-MULTI-001 when a field binding spread may carry the error prop",
+  () => {
+    // form.getInputProps() supplies the field's error prop, so the error UI
+    // cannot be proven absent.
+    const code = `
+    function MantineStyleForm({ form }) {
+      return (
+        <form action="/save">
+          <TextInput {...form.getInputProps('email')} />
+          <button type="submit">Save</button>
+        </form>
+      );
+    }
+  `;
+
+    assert.deepEqual(lintIds(code), []);
+  },
+);
+
+serialTest(
+  "still reports FORM-MULTI-001 for a plain pass-through spread on a field",
+  () => {
+    // {...rest} is not a form-library binding and implies no error prop.
+    const code = `
+    function PassThroughSpreadForm({ rest }) {
+      return (
+        <form action="/save">
+          <input aria-label="Email" {...rest} />
           <button type="submit">Save</button>
         </form>
       );

@@ -31,6 +31,9 @@ export type UXLintProjectConfig = {
     errorSummaryComponents?: string[];
     fieldComponents?: string[];
     fieldErrorProps?: string[];
+    formSubmitProps?: string[];
+    fieldBindingFunctions?: string[];
+    labelComponents?: string[];
     components?: Record<string, DesignSystemComponentConfig>;
     feedbackFunctions?: string[];
   };

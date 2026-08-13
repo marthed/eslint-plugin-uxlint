@@ -43,8 +43,12 @@ export function evaluateFormHasSubmitButNoErrorState(
   for (const form of forms) {
     const hasSubmit = form.submitControls.length > 0;
     const hasErrorState = form.errorIndicators.length > 0;
+    // A form that cannot submit anything has no failure path, so requiring
+    // error UI would be unfounded. This is what separates a real form from a
+    // component demo that renders a <form> for layout.
+    const canSubmit = form.submissionEvidence.length > 0;
 
-    if (!hasSubmit || hasErrorState) continue;
+    if (!hasSubmit || !canSubmit || hasErrorState) continue;
     if (submitHandlerShowsErrorFeedback(form, interactionFacts)) continue;
 
     findings.push({

@@ -40,6 +40,16 @@ export type NormalizedLabel = {
   formId?: string;
 };
 
+// Evidence that a form can actually submit something. A form with no
+// submission mechanism has no failure path, so error-state rules do not
+// apply to it. That exemption needs proof of absence: "unknown" covers spread
+// props, which may hide a handler, and counts as evidence so the exemption
+// stays narrow rather than silencing real forms.
+export type NormalizedSubmissionEvidence = {
+  node: any;
+  kind: "submit-handler" | "form-action" | "submit-click-handler" | "unknown";
+};
+
 export type NormalizedField = {
   node: any;
   name?: string;
@@ -67,6 +77,7 @@ export type NormalizedForm = {
   source: SourceKind;
 
   submitControls: NormalizedSubmitControl[];
+  submissionEvidence: NormalizedSubmissionEvidence[];
   fields: NormalizedField[];
   errorIndicators: NormalizedErrorIndicator[];
 };

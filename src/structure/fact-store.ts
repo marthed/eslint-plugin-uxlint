@@ -5,6 +5,7 @@ import type {
   NormalizedInputControl,
   NormalizedLabel,
   NormalizedSplitButton,
+  NormalizedSubmissionEvidence,
   NormalizedSubmitControl,
   NormalizedToggleControl,
 } from "./normalized-types";
@@ -32,6 +33,7 @@ export class StructureFactStore {
       framework,
       source,
       submitControls: [],
+      submissionEvidence: [],
       fields: [],
       errorIndicators: [],
     };
@@ -53,6 +55,12 @@ export class StructureFactStore {
     const form = this.currentForm();
     if (!form) return;
     form.submitControls.push(control);
+  }
+
+  addSubmissionEvidence(evidence: NormalizedSubmissionEvidence) {
+    const form = this.currentForm();
+    if (!form) return;
+    form.submissionEvidence.push(evidence);
   }
 
   addField(field: NormalizedField) {

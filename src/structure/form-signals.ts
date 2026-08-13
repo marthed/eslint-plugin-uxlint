@@ -10,6 +10,7 @@ export function makeFormSignals(
     "form.source": form.source,
     "form.framework": form.framework,
     "form.hasSubmitControl": form.submitControls.length > 0,
+    "form.hasSubmissionEvidence": form.submissionEvidence.length > 0,
     "form.hasErrorIndicator": form.errorIndicators.length > 0,
     "form.fieldCount": form.fields.length,
     "form.submitControlCount": form.submitControls.length,

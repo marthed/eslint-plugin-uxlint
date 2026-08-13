@@ -57,7 +57,7 @@ serialTest("forms without any error surface still report", () => {
   const code = `
     function PlainForm() {
       return (
-        <form>
+        <form action="/save">
           <input name="email" />
           <button type="submit">Save</button>
         </form>

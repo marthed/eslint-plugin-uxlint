@@ -37,6 +37,11 @@ export function hasAttr(openingEl: any, name: string): boolean {
   return Boolean(getJSXAttribute(openingEl, name));
 }
 
+export function hasSpreadAttribute(openingEl: any): boolean {
+  const attrs = openingEl?.attributes ?? [];
+  return attrs.some((a: any) => a?.type === "JSXSpreadAttribute");
+}
+
 export function attrText(openingEl: any, name: string): string | null {
   return getLiteralAttrValue(getJSXAttribute(openingEl, name));
 }

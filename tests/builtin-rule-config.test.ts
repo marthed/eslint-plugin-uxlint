@@ -6,10 +6,12 @@ function serialTest(name: string, fn: () => void | Promise<void>) {
   test(name, { concurrency: false }, fn);
 }
 
+// The action is what makes this a submittable form; without one,
+// FORM-MULTI-001 correctly stays quiet and there is nothing to override.
 const FORM_WITH_PLACEHOLDER_ONLY_INPUT = `
   function SignupForm() {
     return (
-      <form>
+      <form action="/signup">
         <input type="text" placeholder="Email" />
         <button type="submit">Sign up</button>
       </form>
