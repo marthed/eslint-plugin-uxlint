@@ -9,6 +9,26 @@ import {
   getObjectPatternPropertyKeyName,
 } from "./ast-helpers";
 
+// Full dotted path of a non-computed member chain rooted at an identifier:
+// form.formState.isSubmitting. Needed for status models nested more than one
+// level deep, such as react-hook-form's formState.
+export function getFullMemberPath(node: any): string | null {
+  const parts: string[] = [];
+  let current = node;
+
+  while (current?.type === "MemberExpression") {
+    if (current.computed || current.property?.type !== "Identifier")
+      return null;
+    parts.unshift(current.property.name);
+    current = current.object;
+  }
+
+  if (current?.type !== "Identifier") return null;
+  parts.unshift(current.name);
+
+  return parts.length > 1 ? parts.join(".") : null;
+}
+
 export function collectStateReferenceNames(
   expressionNode: any,
   stateNames: Set<string>,
@@ -17,6 +37,14 @@ export function collectStateReferenceNames(
   if (!expressionNode) return [];
 
   walkAst(expressionNode, (current) => {
+    if (current.type === "MemberExpression") {
+      const fullPath = getFullMemberPath(current);
+      if (fullPath && stateNames.has(fullPath)) {
+        foundStateNames.add(fullPath);
+        return;
+      }
+    }
+
     if (
       current.type === "MemberExpression" &&
       current.computed === false &&

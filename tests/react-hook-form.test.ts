@@ -152,3 +152,149 @@ serialTest("a full react-hook-form flow with toasts and errors passes", () => {
 
   assert.deepEqual(warningIds(lintWithApplyRule(code)), []);
 });
+
+// react-hook-form drives isSubmitting around the wrapped handler, so a form
+// whose only pending cue is the fieldset/button disabled state is covered.
+serialTest("formState.isSubmitting counts as a pending cue", () => {
+  const code = `
+    function CreateOrganisationDialog() {
+      const form = useForm();
+
+      const onFormSubmit = async (values) => {
+        try {
+          await createOrganisation(values);
+          toast({ title: "Created" });
+        } catch {
+          toast({ title: "Failed", variant: "destructive" });
+        }
+      };
+
+      return (
+        <form onSubmit={form.handleSubmit(onFormSubmit)}>
+          <fieldset disabled={form.formState.isSubmitting}>
+            <input name="name" aria-label="Name" />
+            <button type="submit">Create</button>
+          </fieldset>
+        </form>
+      );
+    }
+  `;
+
+  assert.deepEqual(warningIds(lintWithApplyRule(code)), []);
+});
+
+serialTest("destructured isSubmitting counts as a pending cue", () => {
+  const code = `
+    function CreateDialog() {
+      const {
+        handleSubmit,
+        formState: { isSubmitting },
+      } = useForm();
+
+      const onSubmit = async (values) => {
+        try {
+          await save(values);
+          toast({ title: "Saved" });
+        } catch {
+          toast({ title: "Failed", variant: "destructive" });
+        }
+      };
+
+      return (
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <input name="name" aria-label="Name" />
+          <button type="submit" disabled={isSubmitting}>Save</button>
+        </form>
+      );
+    }
+  `;
+
+  assert.deepEqual(warningIds(lintWithApplyRule(code)), []);
+});
+
+serialTest("an unread isSubmitting is still reported", () => {
+  const code = `
+    function SilentDialog() {
+      const form = useForm();
+
+      const onFormSubmit = async (values) => {
+        try {
+          await save(values);
+          toast({ title: "Saved" });
+        } catch {
+          toast({ title: "Failed", variant: "destructive" });
+        }
+      };
+
+      return (
+        <form onSubmit={form.handleSubmit(onFormSubmit)}>
+          <input name="name" aria-label="Name" />
+          <button type="submit">Save</button>
+        </form>
+      );
+    }
+  `;
+
+  assert.deepEqual(warningIds(lintWithApplyRule(code)), [
+    "INTERACTION-ASYNC-START-001",
+  ]);
+});
+
+// A synchronous submit handler has no pending period, so the wrapper must not
+// confer async-phase status writes on it and reclassify it as async.
+serialTest("a synchronous submit handler stays synchronous", () => {
+  const code = `
+    function BugReportForm() {
+      const form = useForm();
+
+      function onSubmit(data) {
+        toast("Report submitted", { description: data.title });
+      }
+
+      return (
+        <form onSubmit={form.handleSubmit(onSubmit)}>
+          <fieldset disabled={form.formState.isSubmitting}>
+            <input name="title" aria-label="Title" />
+            <button type="submit">Submit</button>
+          </fieldset>
+        </form>
+      );
+    }
+  `;
+
+  assert.deepEqual(warningIds(lintWithApplyRule(code)), []);
+});
+
+// next-safe-action's useAction has the same shape as useMutation: a trigger,
+// status fields, and onSuccess/onError options.
+serialTest("useAction is modelled like useMutation", () => {
+  const code = `
+    import { useAction } from "next-safe-action/hooks";
+
+    function SendVerificationCodeForm() {
+      const { handleSubmit, formState: { isSubmitting } } = useForm();
+
+      const { executeAsync, isPending } = useAction(mergeAccountsAction, {
+        onSuccess: () => {
+          toast.success("Code sent");
+        },
+        onError: ({ error }) => {
+          toast.error(error.serverError);
+        },
+      });
+
+      const onSubmit = async () => {
+        await executeAsync({ step: "send-tokens" });
+      };
+
+      return (
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <input name="email" aria-label="Email" />
+          <button type="submit" disabled={isPending || isSubmitting}>Send</button>
+        </form>
+      );
+    }
+  `;
+
+  assert.deepEqual(warningIds(lintWithApplyRule(code)), []);
+});

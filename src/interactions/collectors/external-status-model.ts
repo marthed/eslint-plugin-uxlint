@@ -25,7 +25,23 @@ export type ExternalStatusModel = {
   // Keyed by trigger identifier (`deleteClaim`) or `object.method`
   // (`deleteMutation.mutateAsync`).
   lifecycleCallbacksByTrigger: Map<string, LifecycleCallback[]>;
+  // react-hook-form: the status vars a handleSubmit wrapper confers on the
+  // handler it wraps. Keyed by `handleSubmit` or `form.handleSubmit`.
+  submitWrapperStatusVars: Map<string, Set<string>>;
 };
+
+// react-hook-form manages these around the wrapped submit handler, so a form
+// whose only pending cue is disabled={form.formState.isSubmitting} is still
+// giving the user feedback.
+const FORM_STATE_STATUS_FIELDS: Array<{
+  fieldName: string;
+  phases: InteractionPhase[];
+}> = [
+  { fieldName: "isSubmitting", phases: ["start", "settled"] },
+  { fieldName: "isLoading", phases: ["start", "settled"] },
+  { fieldName: "isValidating", phases: ["start", "settled"] },
+  { fieldName: "isSubmitSuccessful", phases: ["success"] },
+];
 
 const LIFECYCLE_OPTION_PHASES: Record<string, InteractionPhase> = {
   onMutate: "start",
@@ -50,7 +66,108 @@ function createExternalStatusModel(): ExternalStatusModel {
     triggerStateVarsByIdentifier: new Map<string, Set<string>>(),
     triggerStateVarsByMember: new Map<string, Map<string, Set<string>>>(),
     lifecycleCallbacksByTrigger: new Map<string, LifecycleCallback[]>(),
+    submitWrapperStatusVars: new Map<string, Set<string>>(),
   };
+}
+
+function isUseFormCallExpression(node: any): boolean {
+  if (node?.type !== "CallExpression") return false;
+
+  const callee = node.callee;
+  if (callee?.type === "Identifier") return callee.name === "useForm";
+
+  return (
+    callee?.type === "MemberExpression" &&
+    callee.computed === false &&
+    callee.property?.type === "Identifier" &&
+    callee.property.name === "useForm"
+  );
+}
+
+// Registers the status vars a useForm() result exposes, and ties them to the
+// handleSubmit wrapper so the handler it wraps inherits them.
+function collectUseFormStatusModel(
+  model: ExternalStatusModel,
+  declarator: any,
+) {
+  function registerFormState(formStatePath: string, wrapperKey: string) {
+    const statusVars = new Set<string>();
+
+    for (const field of FORM_STATE_STATUS_FIELDS) {
+      const stateVar = `${formStatePath}.${field.fieldName}`;
+      addStatusPhases(model, stateVar, field.phases);
+      statusVars.add(stateVar);
+    }
+
+    const existing =
+      model.submitWrapperStatusVars.get(wrapperKey) ?? new Set<string>();
+    for (const stateVar of statusVars) existing.add(stateVar);
+    model.submitWrapperStatusVars.set(wrapperKey, existing);
+  }
+
+  if (declarator.id?.type === "Identifier") {
+    const formName = declarator.id.name;
+    registerFormState(`${formName}.formState`, `${formName}.handleSubmit`);
+    return;
+  }
+
+  if (declarator.id?.type !== "ObjectPattern") return;
+
+  // const { handleSubmit, formState } = useForm(), including the nested
+  // const { formState: { isSubmitting } } = useForm() shape.
+  let submitWrapperName: string | null = null;
+  const formStateNames: string[] = [];
+  const directStatusVars = new Set<string>();
+
+  for (const property of declarator.id.properties ?? []) {
+    const keyName = getObjectPatternPropertyKeyName(property);
+    if (!keyName) continue;
+
+    const valueNode = unwrapAssignmentPattern(property.value);
+
+    if (keyName === "handleSubmit" && valueNode?.type === "Identifier") {
+      submitWrapperName = valueNode.name;
+      continue;
+    }
+
+    if (keyName !== "formState") continue;
+
+    if (valueNode?.type === "Identifier") {
+      formStateNames.push(valueNode.name);
+      continue;
+    }
+
+    if (valueNode?.type === "ObjectPattern") {
+      for (const nested of valueNode.properties ?? []) {
+        const nestedKey = getObjectPatternPropertyKeyName(nested);
+        if (!nestedKey) continue;
+
+        const nestedValue = unwrapAssignmentPattern(nested.value);
+        if (nestedValue?.type !== "Identifier") continue;
+
+        const field = FORM_STATE_STATUS_FIELDS.find(
+          (candidate) => candidate.fieldName === nestedKey,
+        );
+        if (!field) continue;
+
+        addStatusPhases(model, nestedValue.name, field.phases);
+        directStatusVars.add(nestedValue.name);
+      }
+    }
+  }
+
+  if (!submitWrapperName) return;
+
+  for (const formStateName of formStateNames) {
+    registerFormState(formStateName, submitWrapperName);
+  }
+
+  if (directStatusVars.size > 0) {
+    const existing =
+      model.submitWrapperStatusVars.get(submitWrapperName) ?? new Set<string>();
+    for (const stateVar of directStatusVars) existing.add(stateVar);
+    model.submitWrapperStatusVars.set(submitWrapperName, existing);
+  }
 }
 
 // Reads the options object of a useMutation call: useMutation({ onSuccess })
@@ -178,21 +295,33 @@ function getStatusPhasesFromName(name: string): Set<InteractionPhase> {
   return phases;
 }
 
-// Matches `useMutation()` and any member-expression path ending in it, so
-// tRPC's `trpc.admin.document.delete.useMutation()` and similar generated
-// clients (`api.users.create.useMutation()`) are recognized too. Without
-// this, every tRPC mutation looks like an interaction with no status model.
+// Hooks that return a trigger plus status fields and take onSuccess/onError
+// style options: React Query and tRPC's useMutation, next-safe-action's
+// useAction. They differ only in naming, so they share one model.
+const ACTION_HOOK_NAMES = new Set(["useMutation", "useAction"]);
+const ACTION_TRIGGER_KEYS = [
+  "mutate",
+  "mutateAsync",
+  "execute",
+  "executeAsync",
+];
+
+// Matches a bare call and any member-expression path ending in one of the
+// hook names, so tRPC's `trpc.admin.document.delete.useMutation()` and similar
+// generated clients (`api.users.create.useMutation()`) are recognized too.
+// Without this, every tRPC mutation looks like an interaction with no status
+// model at all.
 function isUseMutationCallExpression(node: any): boolean {
   if (node?.type !== "CallExpression") return false;
 
   const callee = node.callee;
-  if (callee?.type === "Identifier") return callee.name === "useMutation";
+  if (callee?.type === "Identifier") return ACTION_HOOK_NAMES.has(callee.name);
 
   return (
     callee?.type === "MemberExpression" &&
     callee.computed === false &&
     callee.property?.type === "Identifier" &&
-    callee.property.name === "useMutation"
+    ACTION_HOOK_NAMES.has(callee.property.name)
   );
 }
 
@@ -269,6 +398,11 @@ export function collectExternalStatusModel(
       if (current.type !== "VariableDeclarator") return;
       if (current.init?.type !== "CallExpression") return;
 
+      if (isUseFormCallExpression(current.init)) {
+        collectUseFormStatusModel(model, current);
+        return;
+      }
+
       if (isUseMutationCallExpression(current.init)) {
         const lifecycleCallbacks = getLifecycleCallbacks(current.init);
 
@@ -283,7 +417,7 @@ export function collectExternalStatusModel(
             const valueNode = unwrapAssignmentPattern(property.value);
             if (valueNode?.type !== "Identifier") continue;
 
-            if (keyName === "mutate" || keyName === "mutateAsync") {
+            if (ACTION_TRIGGER_KEYS.includes(keyName)) {
               mutationTriggerNames.add(valueNode.name);
               continue;
             }
@@ -325,20 +459,13 @@ export function collectExternalStatusModel(
             memberStatusStateVars.add(stateVar);
           }
 
-          addTriggerMember(
-            model,
-            mutationObjectName,
-            "mutate",
-            memberStatusStateVars,
-          );
-          addTriggerMember(
-            model,
-            mutationObjectName,
-            "mutateAsync",
-            memberStatusStateVars,
-          );
-
-          for (const method of ["mutate", "mutateAsync"]) {
+          for (const method of ACTION_TRIGGER_KEYS) {
+            addTriggerMember(
+              model,
+              mutationObjectName,
+              method,
+              memberStatusStateVars,
+            );
             addLifecycleCallbacks(
               model,
               `${mutationObjectName}.${method}`,

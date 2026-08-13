@@ -87,6 +87,50 @@ function getEventBinding(openingElement: any): {
   return null;
 }
 
+// Emits the status-var writes a submit wrapper confers on the handler it
+// wraps, so a form whose pending cue is disabled={form.formState.isSubmitting}
+// counts as having one.
+function collectSubmitWrapperWrites(
+  callExpression: any,
+  handlerId: string,
+  externalStatusModel: ExternalStatusModel,
+): StateWrite[] {
+  const callee = callExpression.callee;
+
+  const wrapperKey =
+    callee?.type === "Identifier"
+      ? callee.name
+      : callee?.type === "MemberExpression" &&
+          callee.computed === false &&
+          callee.object?.type === "Identifier" &&
+          callee.property?.type === "Identifier"
+        ? `${callee.object.name}.${callee.property.name}`
+        : null;
+
+  if (!wrapperKey) return [];
+
+  const statusVars =
+    externalStatusModel.submitWrapperStatusVars.get(wrapperKey);
+  if (!statusVars) return [];
+
+  const writes: StateWrite[] = [];
+  for (const stateVar of statusVars) {
+    for (const phase of externalStatusModel.statusPhasesByStateVar.get(
+      stateVar,
+    ) ?? []) {
+      writes.push({
+        handlerId,
+        stateVar,
+        setterVar: wrapperKey,
+        phase,
+        node: callExpression,
+      });
+    }
+  }
+
+  return writes;
+}
+
 function resolveInteractionHandlerReference(
   handlerAttribute: any,
   handlersByName: Map<string, InteractionHandler>,
@@ -124,6 +168,17 @@ function resolveInteractionHandlerReference(
         return {
           handlerId: namedHandler.id,
           handlerName: argument.name,
+          // react-hook-form drives isSubmitting around the wrapped handler, so
+          // the wrapper confers its status vars on the handler it wraps. Only
+          // for an async handler: a synchronous submit has no pending period,
+          // and conferring async-phase writes would reclassify it as async.
+          inlineWrites: namedHandler.isAsync
+            ? collectSubmitWrapperWrites(
+                expression,
+                namedHandler.id,
+                externalStatusModel,
+              )
+            : [],
         };
       }
     }
