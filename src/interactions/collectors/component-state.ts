@@ -14,6 +14,7 @@ import {
   DEFAULT_FEEDBACK_FUNCTIONS,
   type ComponentVocabulary,
 } from "../../shared/design-system";
+import { DELEGATED_FEEDBACK_STATE_VAR } from "../types";
 import type {
   HandlerPropCall,
   HandlerPropPass,
@@ -43,7 +44,10 @@ import {
 } from "../tracing/project-index";
 import { collectExternalStatusModel } from "./external-status-model";
 import { collectStatePairsFromFunctionBody } from "./state-pairs";
-import { collectStateWritesForHandler } from "./state-writes";
+import {
+  classifyNodePhaseInHandler,
+  collectStateWritesForHandler,
+} from "./state-writes";
 import {
   collectVisiblePropReads,
   collectVisibleStateReads,
@@ -200,10 +204,35 @@ function collectComponentFacts(
     handlers,
   );
 
+  // Handing an outcome to a parent-supplied callback is feedback whose visible
+  // half lives in the parent. The parent is followed when it can be resolved
+  // (see expandResolvedHandlers); when it cannot, the phase is unknown rather
+  // than unhandled, so record it as a delegated write instead of reporting.
+  const handlersById = new Map(
+    handlers.map((handler) => [handler.id, handler]),
+  );
+  const delegatedWrites: StateWrite[] = [];
+  for (const propCall of handlerPropCalls) {
+    const handler = handlersById.get(propCall.handlerId);
+    if (!handler) continue;
+
+    delegatedWrites.push({
+      handlerId: propCall.handlerId,
+      stateVar: DELEGATED_FEEDBACK_STATE_VAR,
+      setterVar: propCall.propName,
+      phase: classifyNodePhaseInHandler(handler, propCall.node),
+      node: propCall.node,
+    });
+  }
+
   return {
     statePairs,
     handlers,
-    stateWrites: [...stateWrites, ...interactionData.inlineWrites],
+    stateWrites: [
+      ...stateWrites,
+      ...interactionData.inlineWrites,
+      ...delegatedWrites,
+    ],
     stateReads,
     propReads,
     statePropPasses,
@@ -270,7 +299,12 @@ function addComponentFactsToStore(
 function hasLocalInteractionState(componentFacts: ComponentFacts): boolean {
   return (
     componentFacts.statePairs.length > 0 ||
-    componentFacts.stateWrites.length > 0 ||
+    // A delegated write means the component hands its outcome upward, which is
+    // the pass-through shape this check exists to trace through — not local
+    // state of its own.
+    componentFacts.stateWrites.some(
+      (stateWrite) => stateWrite.stateVar !== DELEGATED_FEEDBACK_STATE_VAR,
+    ) ||
     componentFacts.stateReads.length > 0
   );
 }

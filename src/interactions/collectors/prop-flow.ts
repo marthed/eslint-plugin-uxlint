@@ -254,22 +254,23 @@ export function collectHandlerPropCalls(
   }
 
   for (const handler of handlers) {
-    walkAst(
-      handler.node.body ?? handler.node,
-      (current) => {
-        if (current.type !== "CallExpression") return;
+    // Nested functions are included: outcome callbacks routinely live in a
+    // promise chain — fetch(...).then(ok, err).catch(err) — and a prop called
+    // from there is still this handler delegating its outcome to the parent.
+    // State-write tracing already walks nested functions, so this keeps the
+    // two consistent.
+    walkAst(handler.node.body ?? handler.node, (current) => {
+      if (current.type !== "CallExpression") return;
 
-        const propName = resolveCalledPropName(current.callee, propAliases);
-        if (!propName) return;
+      const propName = resolveCalledPropName(current.callee, propAliases);
+      if (!propName) return;
 
-        calls.push({
-          handlerId: handler.id,
-          propName,
-          node: current,
-        });
-      },
-      { skipNestedFunctions: true },
-    );
+      calls.push({
+        handlerId: handler.id,
+        propName,
+        node: current,
+      });
+    });
   }
 
   return calls;

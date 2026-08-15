@@ -1,5 +1,6 @@
 import { InteractionStore } from "../store";
 import {
+  DELEGATED_FEEDBACK_STATE_VAR,
   IMPERATIVE_FEEDBACK_STATE_VAR,
   NAVIGATION_FEEDBACK_STATE_VAR,
 } from "../types";
@@ -9,6 +10,7 @@ import type {
   InteractionPhase,
   PropRead,
   StateRead,
+  StateWrite,
 } from "../types";
 
 export type InteractionFinding = {
@@ -374,6 +376,25 @@ export type InteractionFact = {
   visiblePhases: Set<InteractionPhase>;
 };
 
+// A handler that hands its outcome to a parent-supplied callback only counts
+// as feedback when the parent cannot be found. When it can, that parent's own
+// handlers are already pulled into scope by expandResolvedHandlers, so its
+// feedback is judged directly — and its absence is a real finding.
+function isUnresolvableDelegation(
+  component: ComponentStateModel,
+  stateWrite: StateWrite,
+  options: PropResolutionOptions,
+): boolean {
+  if (stateWrite.stateVar !== DELEGATED_FEEDBACK_STATE_VAR) return false;
+  return (
+    resolveHandlersForProp(
+      component.componentName,
+      stateWrite.setterVar,
+      options,
+    ).length === 0
+  );
+}
+
 export function collectInteractionFacts(
   store: InteractionStore,
 ): InteractionFact[] {
@@ -414,6 +435,11 @@ export function collectInteractionFacts(
           ({ component: handlerComponent, stateWrite }) =>
             stateWrite.stateVar === IMPERATIVE_FEEDBACK_STATE_VAR ||
             stateWrite.stateVar === NAVIGATION_FEEDBACK_STATE_VAR ||
+            isUnresolvableDelegation(
+              handlerComponent,
+              stateWrite,
+              resolutionOptions,
+            ) ||
             hasDirectVisibleStateRead(handlerComponent, stateWrite.stateVar) ||
             hasVisibleChildPropRead(
               handlerComponent,
@@ -440,7 +466,13 @@ export function collectInteractionFacts(
         componentName: component.componentName,
         label: interaction.label ?? "",
         isAsync: isAsyncInteraction,
-        writesState: writesForInteraction.length > 0,
+        // Delegation alone is not state of this interaction's own: a handler
+        // that only forwards to a parent callback stays out of scope, exactly
+        // as it did before delegation was tracked.
+        writesState: writesForInteraction.some(
+          ({ stateWrite }) =>
+            stateWrite.stateVar !== DELEGATED_FEEDBACK_STATE_VAR,
+        ),
         hasVisibleFeedback: visibleWrites.length > 0,
         visiblePhases: getAsyncPhaseCoverage(
           visibleWrites.map((stateWrite) => stateWrite.phase),

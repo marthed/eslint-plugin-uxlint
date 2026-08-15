@@ -12,6 +12,12 @@ export const IMPERATIVE_FEEDBACK_STATE_VAR = "<imperative-feedback>";
 // always treated as visible by the interaction evaluator.
 export const NAVIGATION_FEEDBACK_STATE_VAR = "<navigation-feedback>";
 
+// Pseudo state var recorded when a handler hands its outcome to a
+// parent-supplied callback prop (onError, onSuccess, onSubmit, ...). The
+// feedback lives in the parent, which may be outside the traced scope, so
+// reporting the phase as unhandled would assert an absence UXLint cannot see.
+export const DELEGATED_FEEDBACK_STATE_VAR = "<delegated-feedback>";
+
 export type InteractionPhase =
   | "sync"
   | "start"

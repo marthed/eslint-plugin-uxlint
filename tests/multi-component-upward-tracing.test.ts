@@ -136,3 +136,50 @@ serialTest(
     assert.deepEqual(ids, []);
   },
 );
+
+// Handing an outcome to a parent-supplied callback is feedback whose visible
+// half lives in the parent. Every phase below is covered by rendered status
+// except error, which is delegated -- so the error phase is what is under test.
+//
+// The parent is unresolvable here because linting a child never pulls its
+// parents into the store. When the parent IS in scope -- traced down from the
+// root through pass-through wrappers -- its own feedback is judged directly,
+// which the upward-callback tests above cover.
+serialTest(
+  "does not report an outcome delegated to an unresolvable callback prop",
+  () => {
+    const ids = lintIds({
+      entryFilePath: "src/Child.tsx",
+      files: {
+        "src/Child.tsx": `
+          import React from "react";
+
+          export function Child({ onError }) {
+            const [status, setStatus] = React.useState("idle");
+
+            const handleSave = async () => {
+              setStatus("saving");
+              try {
+                await save();
+                setStatus("saved");
+              } catch (error) {
+                onError(error);
+              } finally {
+                setStatus("idle");
+              }
+            };
+
+            return (
+              <div>
+                <p>{status}</p>
+                <button onClick={handleSave}>Save</button>
+              </div>
+            );
+          }
+        `,
+      },
+    });
+
+    assert.deepEqual(ids, []);
+  },
+);

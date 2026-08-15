@@ -223,6 +223,17 @@ function getFeedbackPhases(
   return ["success", "error"];
 }
 
+// Phase of an arbitrary node inside a handler, using the same positional
+// rules as state writes. Used for handler prop calls, which are collected
+// separately but need the same start/success/error/settled classification.
+export function classifyNodePhaseInHandler(
+  handler: InteractionHandler,
+  node: any,
+): InteractionPhase {
+  const phaseContext = createWritePhaseContext(handler.node, null, null);
+  return classifyStateWriteWithContext(node, phaseContext, node);
+}
+
 export function collectStateWritesForHandler(
   handler: InteractionHandler,
   statePairs: StatePair[],
