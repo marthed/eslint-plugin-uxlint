@@ -304,3 +304,71 @@ serialTest("settled is still reported when a pending cue exists", () => {
     "INTERACTION-ASYNC-SETTLED-001",
   ]);
 });
+
+// Promise-chain callbacks are nested functions, which the write walk skips by
+// design, and they all sit after the first await in source order. Both had to
+// be handled for outcome phases in a chain to classify correctly.
+serialTest(
+  "promise chain: .catch is error, .then's first argument is success",
+  () => {
+    const code = `
+    import React from "react";
+
+    function PublishPanel() {
+      const [status, setStatus] = React.useState("idle");
+
+      const handlePublish = async () => {
+        const payload = await buildPayload();
+        fetch("/publish", { method: "post", body: payload })
+          .then(() => { setStatus("published"); })
+          .catch(() => { setStatus("failed"); })
+          .finally(() => { setStatus("idle"); });
+      };
+
+      return (
+        <div>
+          <p>{status}</p>
+          <button onClick={handlePublish}>Publish</button>
+        </div>
+      );
+    }
+  `;
+
+    // Only the pending cue is missing; success, error, and settled are all
+    // covered from their chain positions.
+    assert.deepEqual(warningIds(lintWithApplyRule(code)), [
+      "INTERACTION-ASYNC-START-001",
+    ]);
+  },
+);
+
+serialTest("promise chain: .then's second argument is error handling", () => {
+  const code = `
+    import React from "react";
+
+    function PublishPanel() {
+      const [status, setStatus] = React.useState("idle");
+
+      const handlePublish = async () => {
+        setStatus("publishing");
+        const payload = await buildPayload();
+        fetch("/publish", { method: "post", body: payload }).then(
+          () => { setStatus("published"); },
+          () => { setStatus("failed"); },
+        );
+      };
+
+      return (
+        <div>
+          <p>{status}</p>
+          <button onClick={handlePublish}>Publish</button>
+        </div>
+      );
+    }
+  `;
+
+  // start, success, and error are covered; nothing clears the pending state.
+  assert.deepEqual(warningIds(lintWithApplyRule(code)), [
+    "INTERACTION-ASYNC-SETTLED-001",
+  ]);
+});

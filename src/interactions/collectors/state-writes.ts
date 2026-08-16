@@ -60,6 +60,45 @@ function isInsideFinally(node: any): boolean {
   return false;
 }
 
+// Outcome handling in a promise chain lives in callbacks that all sit after
+// the first await in source order, so position alone reads every one of them
+// as the success phase. The chain position is the real signal:
+// .catch(cb) and .then(ok, err)'s second argument are error handling,
+// .finally(cb) is settled, .then(ok) is success.
+const PROMISE_CHAIN_METHODS = new Set(["then", "catch", "finally"]);
+
+function getPromiseCallbackPhase(writeNode: any): InteractionPhase | null {
+  let current = writeNode;
+  let parent = writeNode?.parent;
+
+  while (parent) {
+    const isCallbackArgument =
+      (current.type === "ArrowFunctionExpression" ||
+        current.type === "FunctionExpression") &&
+      parent.type === "CallExpression" &&
+      parent.callee?.type === "MemberExpression" &&
+      parent.callee.computed === false &&
+      parent.callee.property?.type === "Identifier";
+
+    if (isCallbackArgument) {
+      const argumentIndex = (parent.arguments ?? []).indexOf(current);
+      if (argumentIndex >= 0) {
+        const methodName = parent.callee.property.name;
+        if (methodName === "catch") return "error";
+        if (methodName === "finally") return "settled";
+        if (methodName === "then") {
+          return argumentIndex === 1 ? "error" : "success";
+        }
+      }
+    }
+
+    current = parent;
+    parent = parent.parent;
+  }
+
+  return null;
+}
+
 function classifyStateWritePhase(
   writeNode: any,
   isAsyncHandler: boolean,
@@ -69,6 +108,9 @@ function classifyStateWritePhase(
   if (!isAsyncHandler) return "sync";
   if (isInsideFinally(writeNode)) return "settled";
   if (isInsideCatch(writeNode)) return "error";
+
+  const promiseCallbackPhase = getPromiseCallbackPhase(writeNode);
+  if (promiseCallbackPhase) return promiseCallbackPhase;
 
   const writeStart = getNodeStart(orderingNode ?? writeNode);
   if (
@@ -491,6 +533,37 @@ export function collectStateWritesForHandler(
           }
         }
 
+        // Promise-chain callbacks run as part of this interaction, so their
+        // writes belong to it. The walk skips nested functions by design, so
+        // they are recursed into explicitly; phase comes from chain position.
+        if (
+          current.callee?.type === "MemberExpression" &&
+          current.callee.computed === false &&
+          current.callee.property?.type === "Identifier" &&
+          PROMISE_CHAIN_METHODS.has(current.callee.property.name) &&
+          depth < maxTraceDepth
+        ) {
+          for (const argument of current.arguments ?? []) {
+            if (
+              argument?.type !== "ArrowFunctionExpression" &&
+              argument?.type !== "FunctionExpression"
+            ) {
+              continue;
+            }
+
+            writes.push(
+              ...collectWritesFromFunction(
+                argument,
+                functionFilePath,
+                setterAliases,
+                createWritePhaseContext(argument, phaseContext, current),
+                activeHelpers,
+                depth + 1,
+              ),
+            );
+          }
+        }
+
         if (!calleeName) return;
         if (depth >= maxTraceDepth) return;
 
@@ -558,7 +631,9 @@ export function collectStateWritesForHandler(
   if (!writes.some((write) => write.phase !== "sync")) return writes;
 
   // Treat post-await writes that clear a pending flag as settled feedback
-  // when the same state var was set to true in start.
+  // when the same state var was set to true in start. Applies on either
+  // outcome path: clearing the flag in a catch or a .catch(...) callback
+  // settles the interaction exactly as clearing it on success does.
   const startPendingStateVars = new Set(
     writes
       .filter(
@@ -570,7 +645,7 @@ export function collectStateWritesForHandler(
   );
 
   for (const write of writes) {
-    if (write.phase !== "success") continue;
+    if (write.phase !== "success" && write.phase !== "error") continue;
     if (!startPendingStateVars.has(write.stateVar)) continue;
     if (getBooleanLiteralArgument(write.node) !== false) continue;
 
