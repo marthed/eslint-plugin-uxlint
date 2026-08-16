@@ -44,6 +44,7 @@
     "playground:lint": "cd examples/playground && npm run lint",
     "benchmark:corpus": "./benchmarks/fetch-corpus.sh",
     "benchmark:noise": "node benchmarks/noise-benchmark.mjs",
+    "benchmark:recall": "npm run build && node benchmarks/recall-benchmark.mjs",
     "playground:lint:watch": "chokidar \"dist/**/*.{js,cjs,mjs,d.ts}\" \"examples/playground/**/*.{ts,tsx,js,jsx,json}\" -c \"npm run playground:lint\"",
     "playground:all": "npm run build && npm run playground:lint && concurrently -n BUILD,APP,LINT -c blue,green,yellow \"npm run dev\" \"npm run playground:dev\" \"npm run playground:lint:watch\""
   },

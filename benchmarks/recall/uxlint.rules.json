@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "config": {
+    "designSystem": {
+      "components": {
+        "AppSwitch": { "role": "switch" },
+        "AppSplitButton": { "role": "split-button" },
+        "AppField": { "role": "text-input" },
+        "AppSelect": { "role": "select" }
+      }
+    },
+    "fieldComponents": ["AppField", "AppSelect"]
+  },
+  "rules": []
+}
