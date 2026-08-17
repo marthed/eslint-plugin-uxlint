@@ -1,9 +1,21 @@
 name: Release
 
+# Pushing a v* tag publishes. Publishing a GitHub Release also works, for when
+# you want curated notes as the gate; the version check below guards both, and
+# the publish step is skipped if that version is already on npm, so the two
+# firing for the same tag is harmless.
 on:
+  push:
+    tags:
+      - "v*"
   release:
     types:
       - published
+  workflow_dispatch:
+
+concurrency:
+  group: publish-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   publish-npm:
@@ -43,5 +55,19 @@ jobs:
       - name: Build package
         run: npm run build
 
+      - name: Check whether this version is already published
+        id: already-published
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version > /dev/null 2>&1; then
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is already on npm; skipping publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
+        if: steps.already-published.outputs.skip != 'true'
         run: npm publish
