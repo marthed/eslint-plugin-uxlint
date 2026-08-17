@@ -17,7 +17,7 @@ import {
   getJSXName,
   hasAttr,
   isLowerTagName,
-} from "./jsx-helpers";
+} from "../../shared/jsx-helpers";
 import {
   isLocationAssignmentTarget,
   isNavigationCallExpression,

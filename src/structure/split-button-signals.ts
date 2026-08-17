@@ -1,6 +1,6 @@
 import type { SignalBag } from "../shared/dsl";
 import type { NormalizedSplitButton } from "./normalized-types";
-import { getJSXName } from "./collectors/jsx-helpers";
+import { getJSXName } from "../shared/jsx-helpers";
 
 // Signals exposed to DSL rules with appliesTo: ["SplitButton"].
 // Absent optional facts are normalized to "" / false so comparisons stay

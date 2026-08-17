@@ -26,7 +26,7 @@ import {
   getJSXAttribute,
   getJSXName,
   isLowerTagName,
-} from "./jsx-helpers";
+} from "../../shared/jsx-helpers";
 
 function findEnclosingFunctionBody(node: any): any | null {
   let current = node?.parent;

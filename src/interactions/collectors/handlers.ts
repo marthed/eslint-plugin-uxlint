@@ -9,7 +9,7 @@ import {
   attrText,
   getJSXAttribute,
   getJSXName,
-} from "../../structure/collectors/jsx-helpers";
+} from "../../shared/jsx-helpers";
 import { inferIsAsyncHandler, walkAst } from "./ast-helpers";
 import type { ExternalStatusModel } from "./external-status-model";
 import type { HelperFunctionResolver } from "./helper-resolver";

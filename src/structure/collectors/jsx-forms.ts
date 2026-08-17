@@ -7,7 +7,7 @@ import {
   hasAttr,
   hasSpreadAttribute,
   isLowerTagName,
-} from "./jsx-helpers";
+} from "../../shared/jsx-helpers";
 
 function includesName(
   names: string[] | undefined,

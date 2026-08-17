@@ -7,7 +7,7 @@ import {
   getJSXName,
   getLiteralAttrValue,
   isLowerTagName,
-} from "./jsx-helpers";
+} from "../../shared/jsx-helpers";
 
 function isTextLikeInputType(inputType: string): boolean {
   return ![

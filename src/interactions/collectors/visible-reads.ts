@@ -4,7 +4,7 @@
 
 import type { ComponentVocabulary } from "../../shared/design-system";
 import type { PropRead, StateRead } from "../types";
-import { getJSXName } from "../../structure/collectors/jsx-helpers";
+import { getJSXName } from "../../shared/jsx-helpers";
 import { isComponentJSXName, walkAst } from "./ast-helpers";
 import {
   collectComponentPropAliases,
