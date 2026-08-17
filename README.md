@@ -316,6 +316,58 @@ Evaluated once per collected form (native `<form>` or configured
 | `form.submitControlCount` | number  | Number of collected submit controls             |
 | `form.source`             | string  | `"native"`, `"framework"`, or `"design-system"` |
 
+## `ToggleControl`
+
+Evaluated once per collected toggle: a native `<input type="checkbox"
+role="switch">` (the WAI-ARIA switch pattern) or a component declared with
+`role: "switch"` in `designSystem.components`.
+
+| Signal                             | Type    | Description                                                     |
+| ---------------------------------- | ------- | --------------------------------------------------------------- |
+| `toggle.componentName`             | string  | JSX name of the toggle element                                  |
+| `toggle.boundValueShape`           | string  | `"boolean"`, `"non-boolean"`, or `"unknown"`                    |
+| `toggle.isBooleanBound`            | boolean | Bound value resolved to a boolean                               |
+| `toggle.controlsConditionalRender` | boolean | Bound state is the condition for other content in the same form |
+| `toggle.isInsideForm`              | boolean | Toggle sits inside a collected form                             |
+| `toggle.isInsideSubmitForm`        | boolean | That form also contains a submit control                        |
+
+`toggle.boundValueShape` is the one signal where `"unknown"` is a value you can
+match on, rather than being normalized away: it means the bound value could not
+be classified statically, which is exactly what a fail-safe rule wants to test.
+
+Example: replace the built-in deferred-toggle rule, keeping the exemption for
+progressive disclosure:
+
+```json
+{
+  "id": "TEAM-TOGGLE-001",
+  "title": "Switches must apply immediately",
+  "severity": "warn",
+  "appliesTo": ["ToggleControl"],
+  "when": {
+    "all": [
+      { "eq": ["toggle.isInsideSubmitForm", true] },
+      { "eq": ["toggle.controlsConditionalRender", false] }
+    ]
+  },
+  "report": {
+    "message": "Use a checkbox when the change is deferred to Submit."
+  }
+}
+```
+
+## `SplitButton`
+
+Evaluated once per component declared with `role: "split-button"` in
+`designSystem.components`. There is no native split-button element, so this
+scope is only reachable with a component vocabulary.
+
+| Signal                         | Type    | Description                                                   |
+| ------------------------------ | ------- | ------------------------------------------------------------- |
+| `splitButton.componentName`    | string  | Declared component name                                       |
+| `splitButton.hasPrimaryAction` | boolean | One of the configured `primaryActionProps` is present         |
+| `splitButton.navigatesToRoute` | boolean | `href` / `to`, or a navigation call in an action or menu prop |
+
 ## `Interaction`
 
 Evaluated once per traced interaction (an `onClick`/`onSubmit`/`onPress`

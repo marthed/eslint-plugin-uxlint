@@ -19,6 +19,8 @@ import { createJSXSplitButtonsCollector } from "../structure/collectors/jsx-spli
 import { evaluateSplitButtons } from "../structure/evaluators/split-buttons";
 import { makeInputControlSignals } from "../structure/input-control-signals";
 import { makeFormSignals } from "../structure/form-signals";
+import { makeToggleControlSignals } from "../structure/toggle-control-signals";
+import { makeSplitButtonSignals } from "../structure/split-button-signals";
 import { createComponentStateCollector } from "../interactions/collectors/component-state";
 import {
   collectInteractionFacts,
@@ -192,6 +194,8 @@ const rule: Rule.RuleModule = {
         const forms = store.getForms();
         const inputControls = store.getInputControls();
         const labels = store.getLabels();
+        const toggleControls = store.getToggleControls();
+        const splitButtons = store.getSplitButtons();
         const interactionFacts = collectInteractionFacts(interactionStore);
 
         const structureFindings = evaluateFormHasSubmitButNoErrorState(
@@ -210,17 +214,12 @@ const rule: Rule.RuleModule = {
           reportBuiltinFinding(finding);
         }
 
-        const toggleFindings = evaluateToggleControls(
-          store.getToggleControls(),
-          forms,
-        );
+        const toggleFindings = evaluateToggleControls(toggleControls, forms);
         for (const finding of toggleFindings) {
           reportBuiltinFinding(finding);
         }
 
-        const splitButtonFindings = evaluateSplitButtons(
-          store.getSplitButtons(),
-        );
+        const splitButtonFindings = evaluateSplitButtons(splitButtons);
         for (const finding of splitButtonFindings) {
           reportBuiltinFinding(finding);
         }
@@ -243,6 +242,20 @@ const rule: Rule.RuleModule = {
           forms,
           (form) => makeFormSignals(form, filename),
           (form) => form.node,
+        );
+
+        applyFactScopeHeuristics(
+          "ToggleControl",
+          toggleControls,
+          (toggle) => makeToggleControlSignals(toggle, forms, filename),
+          (toggle) => toggle.node,
+        );
+
+        applyFactScopeHeuristics(
+          "SplitButton",
+          splitButtons,
+          (splitButton) => makeSplitButtonSignals(splitButton, filename),
+          (splitButton) => splitButton.node,
         );
 
         applyFactScopeHeuristics(
