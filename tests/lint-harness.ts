@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { Linter } from "eslint";
 import * as tsParserModule from "@typescript-eslint/parser";
-import * as applyModule from "../src/rules/apply";
+import { rules as uxlintRules } from "../src/rules";
 
 type HeuristicFile = {
   version: number;
@@ -17,7 +17,6 @@ const EMPTY_UXLINT_FILE: HeuristicFile = {
 };
 
 const tsParser = (tsParserModule as any).default ?? tsParserModule;
-const apply = (applyModule as any).default ?? applyModule;
 
 function createApplyRuleConfig() {
   return [
@@ -33,7 +32,7 @@ function createApplyRuleConfig() {
       },
       plugins: {
         uxlint: {
-          rules: { apply },
+          rules: uxlintRules,
         },
       },
       rules: {

@@ -34,7 +34,8 @@ yarn add eslint-plugin-uxlint -D
 
 Add the plugin to your ESLint configuration.
 
-Example using **ESLint flat config (v9+)**:
+The quickest start is the `recommended` preset, which turns every rule on at
+`warn`:
 
 ```javascript
 import uxlint from "eslint-plugin-uxlint";
@@ -45,19 +46,74 @@ export default [
     files: ["**/*.{ts,tsx,js,jsx}"],
     languageOptions: {
       parser: tsParser,
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-      },
+      parserOptions: { ecmaFeatures: { jsx: true } },
     },
-    plugins: {
-      uxlint,
+  },
+  uxlint.configs.recommended,
+];
+```
+
+`uxlint.configs.strict` enables the same rules at `error`.
+
+## Choosing severities per rule
+
+Every built-in finding is its own ESLint rule, named after the finding id in
+lower case — `INPUT-DATE-002` is reported by `uxlint/input-date-002`. So
+severity, editor filtering, and suppression all work per rule:
+
+```javascript
+export default [
+  {
+    files: ["**/*.{ts,tsx,js,jsx}"],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    plugins: { uxlint },
     rules: {
-      "uxlint/apply": "warn",
+      // Block the build on missing error feedback...
+      "uxlint/interaction-async-error-001": "error",
+      // ...but only nudge about date formats.
+      "uxlint/input-date-002": "warn",
+      "uxlint/input-choice-004": "off",
+      // Rules you wrote in uxlint.rules.json.
+      "uxlint/custom": "warn",
     },
   },
 ];
 ```
+
+and a single finding can be suppressed where it is wrong:
+
+```jsx
+{
+  /* eslint-disable-next-line uxlint/input-mobile-001 -- label is rendered by the parent */
+}
+<input type="text" placeholder="Email" />;
+```
+
+The analysis runs once per file no matter how many of these rules are enabled.
+
+Two rules exist alongside the built-in packs:
+
+| Rule                  | Reports                                            |
+| --------------------- | -------------------------------------------------- |
+| `uxlint/custom`       | Rules you defined in `uxlint.rules.json`           |
+| `uxlint/config-error` | `uxlint.rules.json` exists but could not be parsed |
+
+## `uxlint/apply` (all-in-one)
+
+`uxlint/apply` reports every finding — built-in packs and your own rules — at
+one severity. It predates the split and still works:
+
+```javascript
+rules: {
+  "uxlint/apply": "warn",
+}
+```
+
+Enable `apply` **or** the individual rules, not both: they report the same
+findings, so together every finding appears twice.
 
 ---
 
@@ -162,8 +218,10 @@ through `config.builtinRules`:
 }
 ```
 
-`severity` currently supports `"off"`; the warning versus error level of
-reported findings follows the `uxlint/apply` setting in your ESLint config.
+`config.builtinRules` is about the rule's _content_ — whether it applies at all
+and what it says. The warn-versus-error level belongs in your ESLint config,
+per rule (see [Choosing severities per rule](#choosing-severities-per-rule)).
+`"off"` works in either place.
 
 ---
 
