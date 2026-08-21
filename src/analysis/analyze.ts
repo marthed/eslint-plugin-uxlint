@@ -36,6 +36,7 @@ import {
   evaluateInteractionFactFindings,
 } from "../interactions/evaluators/interaction-feedback";
 import { makeInteractionSignals } from "../interactions/interaction-signals";
+import { evaluateAsyncCollectionSources } from "../interactions/evaluators/data-states";
 import { InteractionStore } from "../interactions/store";
 
 // Rule keys for the findings that are not a built-in pack finding.
@@ -259,6 +260,14 @@ function runAnalysis(context: Rule.RuleContext): AnalyzedFinding[] {
 
   for (const finding of evaluateInteractionFactFindings(interactionFacts)) {
     addBuiltinFinding(finding);
+  }
+
+  for (const component of interactionStore.getComponents()) {
+    for (const finding of evaluateAsyncCollectionSources(
+      component.asyncCollectionSources,
+    )) {
+      addBuiltinFinding(finding);
+    }
   }
 
   addFactScopeFindings(

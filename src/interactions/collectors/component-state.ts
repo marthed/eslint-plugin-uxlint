@@ -43,6 +43,10 @@ import {
   type ParserLike,
 } from "../tracing/project-index";
 import { collectExternalStatusModel } from "./external-status-model";
+import {
+  collectAsyncCollectionSources,
+  type AsyncCollectionSource,
+} from "./data-sources";
 import { collectStatePairsFromFunctionBody } from "./state-pairs";
 import {
   classifyNodePhaseInHandler,
@@ -119,6 +123,7 @@ type ComponentFacts = {
   propSpreadPasses: PropSpreadPass[];
   handlerPropPasses: HandlerPropPass[];
   handlerPropCalls: HandlerPropCall[];
+  asyncCollectionSources: AsyncCollectionSource[];
   interactions: InteractionSourceFact[];
 };
 
@@ -240,6 +245,9 @@ function collectComponentFacts(
     propSpreadPasses,
     handlerPropPasses,
     handlerPropCalls,
+    asyncCollectionSources: collectAsyncCollectionSources(
+      componentFunctionNode,
+    ),
     interactions: interactionData.interactions,
   };
 }
@@ -289,6 +297,10 @@ function addComponentFactsToStore(
 
   for (const handlerPropCall of componentFacts.handlerPropCalls) {
     store.addHandlerPropCall(componentName, handlerPropCall);
+  }
+
+  for (const source of componentFacts.asyncCollectionSources) {
+    store.addAsyncCollectionSource(componentName, source);
   }
 
   for (const interaction of componentFacts.interactions) {

@@ -1,4 +1,5 @@
 import type {
+  AsyncCollectionSource,
   ComponentStateModel,
   HandlerPropCall,
   HandlerPropPass,
@@ -37,6 +38,7 @@ export class InteractionStore {
       propSpreadPasses: [],
       handlerPropPasses: [],
       handlerPropCalls: [],
+      asyncCollectionSources: [],
       handlers: [],
       interactions: [],
     };
@@ -79,6 +81,15 @@ export class InteractionStore {
 
   addHandlerPropCall(componentName: string, call: HandlerPropCall) {
     this.getOrCreateComponent(componentName).handlerPropCalls.push(call);
+  }
+
+  addAsyncCollectionSource(
+    componentName: string,
+    source: AsyncCollectionSource,
+  ) {
+    this.getOrCreateComponent(componentName).asyncCollectionSources.push(
+      source,
+    );
   }
 
   addHandler(componentName: string, handler: InteractionHandler) {

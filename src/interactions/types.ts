@@ -87,6 +87,14 @@ export type HandlerPropPass = {
   handlerName?: string;
 };
 
+export type AsyncCollectionSource = {
+  node: any;
+  rendersCollection: boolean;
+  hasLoadingBranch: boolean;
+  hasErrorBranch: boolean;
+  hasEmptyBranch: boolean;
+};
+
 export type HandlerPropCall = {
   handlerId: string;
   propName: string;
@@ -114,6 +122,7 @@ export type ComponentStateModel = {
   propSpreadPasses: PropSpreadPass[];
   handlerPropPasses: HandlerPropPass[];
   handlerPropCalls: HandlerPropCall[];
+  asyncCollectionSources: AsyncCollectionSource[];
   handlers: InteractionHandler[];
   interactions: InteractionSource[];
 };

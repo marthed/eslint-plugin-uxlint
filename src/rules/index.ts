@@ -37,6 +37,21 @@ export const BUILTIN_FINDING_IDS: Array<{ id: string; description: string }> = [
       "State changed before a request should be restored if the request fails",
   },
   {
+    id: "DATA-LOADING-001",
+    description:
+      "A collection from an async source should show that data is loading",
+  },
+  {
+    id: "DATA-EMPTY-001",
+    description:
+      "A collection from an async source should handle having no data",
+  },
+  {
+    id: "DATA-ERROR-001",
+    description:
+      "A collection from an async source should handle a failed fetch",
+  },
+  {
     id: "FORM-MULTI-001",
     description: "A form that can submit should expose a detectable error path",
   },
