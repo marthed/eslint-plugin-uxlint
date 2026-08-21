@@ -28,6 +28,10 @@ export type NormalizedInputControl = {
   ariaLabel?: string;
   ariaLabelledBy?: string;
   wrappingLabelText?: string;
+  // A <label> with text sits in the same field group, within a few ancestors,
+  // but is not associated by htmlFor/id or aria-labelledby. The user can see a
+  // label; the control is not programmatically tied to it.
+  hasNearbyLabelText: boolean;
   isWrappedByLabel: boolean;
   isDefaultSelected: boolean;
 };

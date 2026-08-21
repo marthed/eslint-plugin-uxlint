@@ -59,6 +59,19 @@ export function getLabelTextsForControl(
   return uniqueTexts(texts);
 }
 
+// INPUT-MOBILE-001 asks whether the user can see a label, not whether the
+// control is programmatically tied to one. A <label> in the same field group
+// answers the first question; the second is `label-has-associated-control`'s
+// job, in jsx-a11y.
+export function hasVisibleLabelNearby(
+  control: NormalizedInputControl,
+  labels: NormalizedLabel[],
+): boolean {
+  return (
+    hasUsableAssociatedLabel(control, labels) || control.hasNearbyLabelText
+  );
+}
+
 export function hasUsableAssociatedLabel(
   control: NormalizedInputControl,
   labels: NormalizedLabel[],
@@ -207,8 +220,7 @@ function evaluatePlaceholderLabels(
     .filter((control) => Boolean(control.placeholder?.trim()))
     .filter(
       (control) =>
-        !control.labelProp?.trim() &&
-        !hasUsableAssociatedLabel(control, labels),
+        !control.labelProp?.trim() && !hasVisibleLabelNearby(control, labels),
     )
     .map((control) => ({
       node: control.node,
