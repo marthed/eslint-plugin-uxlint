@@ -110,11 +110,7 @@ serialTest(
       }
     `);
 
-    assert.deepEqual(ids, [
-      IDS.asyncStart,
-      IDS.asyncError,
-      IDS.asyncSuccess,
-    ]);
+    assert.deepEqual(ids, [IDS.asyncStart, IDS.asyncError, IDS.asyncSuccess]);
   },
 );
 

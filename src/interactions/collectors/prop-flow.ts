@@ -15,6 +15,7 @@ import { getJSXName } from "../../shared/jsx-helpers";
 import { isComponentJSXName, walkAst } from "./ast-helpers";
 import {
   collectComponentPropAliases,
+  collectDerivedAliases,
   collectPropReferenceNames,
   collectStateReferenceNames,
   type ComponentPropAliases,
@@ -65,13 +66,28 @@ export function collectStatePropPasses(
 
   if (stateNames.size === 0) return passes;
 
+  // <Button loading={isLoading} /> where isLoading is derived from state is
+  // still a handoff of that state. Without this the prop pass is invisible and
+  // the pending cue reads as absent.
+  const derivedAliases = collectDerivedAliases(
+    componentFunctionNode,
+    stateNames,
+  );
+  const matchNames = new Set([...stateNames, ...derivedAliases.keys()]);
+
   walkAst(
     componentFunctionNode.body ?? componentFunctionNode,
     (current) => {
       if (current.type !== "JSXAttribute") return;
 
       const expression = current.value?.expression;
-      const stateVars = collectStateReferenceNames(expression, stateNames);
+      const stateVars = [
+        ...new Set(
+          collectStateReferenceNames(expression, matchNames).flatMap(
+            (name) => derivedAliases.get(name) ?? [name],
+          ),
+        ),
+      ];
       if (stateVars.length === 0) return;
 
       const openingElement = current.parent;

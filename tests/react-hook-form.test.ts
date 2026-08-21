@@ -298,3 +298,39 @@ serialTest("useAction is modelled like useMutation", () => {
 
   assert.deepEqual(warningIds(lintWithApplyRule(code)), []);
 });
+
+// The two-step shape: the hook result is stored, then destructured separately.
+serialTest("isSubmitting destructured from a stored useForm result", () => {
+  const code = `
+    function DistributeDialog() {
+      const form = useForm();
+
+      const {
+        handleSubmit,
+        formState: { isSubmitting },
+      } = form;
+
+      const onFormSubmit = async (values) => {
+        try {
+          await distribute(values);
+          toast.success("Sent");
+        } catch {
+          toast.error("Failed");
+        }
+      };
+
+      return (
+        <form onSubmit={handleSubmit(onFormSubmit)}>
+          <fieldset disabled={isSubmitting}>
+            <label htmlFor="two-step-subject">Subject</label>
+            <input id="two-step-subject" name="subject" />
+            <p role="alert">Something went wrong.</p>
+            <button type="submit">Send</button>
+          </fieldset>
+        </form>
+      );
+    }
+  `;
+
+  assert.deepEqual(warningIds(lintWithApplyRule(code)), []);
+});

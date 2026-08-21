@@ -390,15 +390,37 @@ export function collectExternalStatusModel(
   const reduxStateVars = new Set<string>();
   const reduxTriggerNames = new Set<string>();
   const zustandStateVars = new Set<string>();
+  const useFormResultNames = new Set<string>();
   const zustandTriggerNames = new Set<string>();
 
   walkAst(
     componentFunctionNode.body ?? componentFunctionNode,
     (current) => {
       if (current.type !== "VariableDeclarator") return;
+
+      // The two-step shape, which is at least as common as destructuring the
+      // hook call directly:
+      //
+      //   const form = useForm();
+      //   const { handleSubmit, formState: { isSubmitting } } = form;
+      //
+      // Without this the second declarator is invisible and the pending cue it
+      // exposes never reaches the interaction.
+      if (
+        current.init?.type === "Identifier" &&
+        useFormResultNames.has(current.init.name) &&
+        current.id?.type === "ObjectPattern"
+      ) {
+        collectUseFormStatusModel(model, current);
+        return;
+      }
+
       if (current.init?.type !== "CallExpression") return;
 
       if (isUseFormCallExpression(current.init)) {
+        if (current.id?.type === "Identifier") {
+          useFormResultNames.add(current.id.name);
+        }
         collectUseFormStatusModel(model, current);
         return;
       }

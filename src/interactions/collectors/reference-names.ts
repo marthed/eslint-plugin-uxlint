@@ -165,3 +165,41 @@ export function collectPropReferenceNames(
 
   return [...foundPropNames];
 }
+
+// Components routinely render a value derived from their state rather than the
+// state itself:
+//
+//   const isLoading = isSubmitting || isResetting;
+//   <Button disabled={isLoading} />
+//
+// The handler writes isResetting, so looking only for JSX reads of isResetting
+// finds nothing and the pending cue reads as absent. Local `const` bindings
+// whose initialiser references observable state are followed, one level, so a
+// read of the derived name counts as a read of what it was derived from.
+export function collectDerivedAliases(
+  componentFunctionNode: any,
+  stateNames: Set<string>,
+): Map<string, string[]> {
+  const aliases = new Map<string, string[]>();
+  const bodyStatements = componentFunctionNode.body?.body;
+  if (!Array.isArray(bodyStatements)) return aliases;
+
+  for (const statement of bodyStatements) {
+    if (statement.type !== "VariableDeclaration") continue;
+
+    for (const declarator of statement.declarations ?? []) {
+      if (declarator.id?.type !== "Identifier") continue;
+      if (!declarator.init) continue;
+      // An ArrayPattern init is a hook result, not a derivation.
+      if (stateNames.has(declarator.id.name)) continue;
+
+      const referenced = collectStateReferenceNames(
+        declarator.init,
+        stateNames,
+      );
+      if (referenced.length > 0) aliases.set(declarator.id.name, referenced);
+    }
+  }
+
+  return aliases;
+}

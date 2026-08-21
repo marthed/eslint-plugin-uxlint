@@ -8,6 +8,7 @@ import { getJSXName } from "../../shared/jsx-helpers";
 import { isComponentJSXName, walkAst } from "./ast-helpers";
 import {
   collectComponentPropAliases,
+  collectDerivedAliases,
   collectPropReferenceNames,
   collectStateReferenceNames,
 } from "./reference-names";
@@ -48,12 +49,25 @@ export function collectVisibleStateReads(
 
   if (stateNames.size === 0) return reads;
 
+  const derivedAliases = collectDerivedAliases(
+    componentFunctionNode,
+    stateNames,
+  );
+  // Matching runs against state names plus their derived aliases; a matched
+  // alias is expanded back to the state it came from before being recorded.
+  const matchNames = new Set([...stateNames, ...derivedAliases.keys()]);
+  const expand = (names: string[]): string[] => [
+    ...new Set(names.flatMap((name) => derivedAliases.get(name) ?? [name])),
+  ];
+
   walkAst(
     componentFunctionNode.body ?? componentFunctionNode,
     (current) => {
       if (current.type === "JSXAttribute") {
         const expression = current.value?.expression;
-        const stateVars = collectStateReferenceNames(expression, stateNames);
+        const stateVars = expand(
+          collectStateReferenceNames(expression, matchNames),
+        );
         if (stateVars.length === 0) return;
 
         const openingElement = current.parent;
@@ -116,9 +130,8 @@ export function collectVisibleStateReads(
       }
 
       if (current.type === "LogicalExpression" && current.operator === "&&") {
-        const leftStateVars = collectStateReferenceNames(
-          current.left,
-          stateNames,
+        const leftStateVars = expand(
+          collectStateReferenceNames(current.left, matchNames),
         );
         for (const stateVar of leftStateVars) {
           reads.push({
@@ -131,9 +144,8 @@ export function collectVisibleStateReads(
       }
 
       if (current.type === "ConditionalExpression") {
-        const testStateVars = collectStateReferenceNames(
-          current.test,
-          stateNames,
+        const testStateVars = expand(
+          collectStateReferenceNames(current.test, matchNames),
         );
         for (const stateVar of testStateVars) {
           reads.push({
@@ -149,9 +161,8 @@ export function collectVisibleStateReads(
         current.type === "JSXExpressionContainer" &&
         current.parent?.type !== "JSXAttribute"
       ) {
-        const expressionStateVars = collectStateReferenceNames(
-          current.expression,
-          stateNames,
+        const expressionStateVars = expand(
+          collectStateReferenceNames(current.expression, matchNames),
         );
         for (const stateVar of expressionStateVars) {
           reads.push({
