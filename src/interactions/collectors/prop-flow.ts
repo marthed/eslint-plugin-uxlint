@@ -24,6 +24,22 @@ import {
 export function extractDirectCalledHandlerName(
   expressionNode: any,
 ): string | null {
+  // `onClick={() => void handleSave()}` and `onClick={async () => await
+  // handleSave()}` both mean "call this handler"; the operator is there to
+  // satisfy lint rules about floating promises. Without unwrapping them the
+  // binding looks like an inline handler that writes nothing, and every
+  // interaction behind one is analysed as the wrong function.
+  if (
+    expressionNode?.type === "UnaryExpression" &&
+    expressionNode.operator === "void"
+  ) {
+    return extractDirectCalledHandlerName(expressionNode.argument);
+  }
+
+  if (expressionNode?.type === "AwaitExpression") {
+    return extractDirectCalledHandlerName(expressionNode.argument);
+  }
+
   if (
     expressionNode?.type === "CallExpression" &&
     expressionNode.callee?.type === "Identifier"
@@ -38,20 +54,12 @@ export function extractDirectCalledHandlerName(
   ) {
     const firstStatement = expressionNode.body[0];
 
-    if (
-      firstStatement?.type === "ExpressionStatement" &&
-      firstStatement.expression?.type === "CallExpression" &&
-      firstStatement.expression.callee?.type === "Identifier"
-    ) {
-      return firstStatement.expression.callee.name;
+    if (firstStatement?.type === "ExpressionStatement") {
+      return extractDirectCalledHandlerName(firstStatement.expression);
     }
 
-    if (
-      firstStatement?.type === "ReturnStatement" &&
-      firstStatement.argument?.type === "CallExpression" &&
-      firstStatement.argument.callee?.type === "Identifier"
-    ) {
-      return firstStatement.argument.callee.name;
+    if (firstStatement?.type === "ReturnStatement") {
+      return extractDirectCalledHandlerName(firstStatement.argument);
     }
   }
 
