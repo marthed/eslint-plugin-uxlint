@@ -39,6 +39,8 @@ import { makeInteractionSignals } from "../interactions/interaction-signals";
 import { evaluateAsyncCollectionSources } from "../interactions/evaluators/data-states";
 import { collectAsyncCollectionSourcesInFile } from "../interactions/collectors/data-sources";
 import { collectAutoplayInFile } from "../structure/collectors/jsx-autoplay";
+import { collectUnmountedTabPanelsInFile } from "../structure/collectors/jsx-tab-panels";
+import { evaluateUnmountedTabPanels } from "../structure/evaluators/tab-panels";
 import { evaluateAutoplay } from "../structure/evaluators/autoplay";
 import { InteractionStore } from "../interactions/store";
 
@@ -281,6 +283,12 @@ function runAnalysis(context: Rule.RuleContext): AnalyzedFinding[] {
 
   for (const finding of evaluateAutoplay(
     collectAutoplayInFile(sourceCode.ast),
+  )) {
+    addBuiltinFinding(finding);
+  }
+
+  for (const finding of evaluateUnmountedTabPanels(
+    collectUnmountedTabPanelsInFile(sourceCode.ast, projectConfig),
   )) {
     addBuiltinFinding(finding);
   }

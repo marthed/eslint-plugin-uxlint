@@ -56,6 +56,11 @@ export const BUILTIN_FINDING_IDS: Array<{ id: string; description: string }> = [
     description: "A failed request should not discard what the user typed",
   },
   {
+    id: "TABS-UNMOUNT-001",
+    description:
+      "A tab panel should stay mounted and hide, not be destroyed on switch",
+  },
+  {
     id: "MEDIA-AUTOPLAY-001",
     description: "Content that starts on its own should be stoppable",
   },

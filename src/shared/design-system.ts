@@ -4,7 +4,8 @@ export type DesignSystemComponentRole =
   | "textarea"
   | "select"
   | "switch"
-  | "split-button";
+  | "split-button"
+  | "tab-panel";
 
 export type DesignSystemComponentConfig = {
   role?: DesignSystemComponentRole;
