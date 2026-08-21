@@ -52,6 +52,10 @@ export const BUILTIN_FINDING_IDS: Array<{ id: string; description: string }> = [
       "A collection from an async source should handle a failed fetch",
   },
   {
+    id: "MEDIA-AUTOPLAY-001",
+    description: "Content that starts on its own should be stoppable",
+  },
+  {
     id: "FORM-MULTI-001",
     description: "A form that can submit should expose a detectable error path",
   },

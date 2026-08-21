@@ -38,6 +38,8 @@ import {
 import { makeInteractionSignals } from "../interactions/interaction-signals";
 import { evaluateAsyncCollectionSources } from "../interactions/evaluators/data-states";
 import { collectAsyncCollectionSourcesInFile } from "../interactions/collectors/data-sources";
+import { collectAutoplayInFile } from "../structure/collectors/jsx-autoplay";
+import { evaluateAutoplay } from "../structure/evaluators/autoplay";
 import { InteractionStore } from "../interactions/store";
 
 // Rule keys for the findings that are not a built-in pack finding.
@@ -274,6 +276,12 @@ function runAnalysis(context: Rule.RuleContext): AnalyzedFinding[] {
   }
 
   for (const finding of evaluateInteractionFactFindings(interactionFacts)) {
+    addBuiltinFinding(finding);
+  }
+
+  for (const finding of evaluateAutoplay(
+    collectAutoplayInFile(sourceCode.ast),
+  )) {
     addBuiltinFinding(finding);
   }
 
