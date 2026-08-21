@@ -208,39 +208,57 @@ function usesOutsideDeclarator(
   return found;
 }
 
-export function collectAsyncCollectionSources(
-  componentFunctionNode: any,
+// Nearest enclosing function, which is the component scope for branch lookup.
+function getEnclosingFunction(node: any): any | null {
+  let current = node?.parent;
+
+  while (current) {
+    if (
+      current.type === "FunctionDeclaration" ||
+      current.type === "FunctionExpression" ||
+      current.type === "ArrowFunctionExpression"
+    ) {
+      return current;
+    }
+    current = current.parent;
+  }
+
+  return null;
+}
+
+// Scans one file. Deliberately not routed through the interaction store:
+// multi-file tracing pulls child components from other files into that store,
+// and reporting their nodes against the file being linted put findings on
+// unrelated lines in unrelated files.
+export function collectAsyncCollectionSourcesInFile(
+  programNode: any,
 ): AsyncCollectionSource[] {
   const sources: AsyncCollectionSource[] = [];
 
-  walkAst(componentFunctionNode.body ?? componentFunctionNode, (current) => {
+  walkAst(programNode, (current) => {
     if (current.type !== "VariableDeclarator") return;
     if (!isDataHookCall(current.init)) return;
 
     const names = getSourceNames(current);
     if (!names) return;
 
+    const scope = getEnclosingFunction(current);
+    if (!scope) return;
+
     let rendersCollection = false;
-    // A loading or error value is "handled" if the component uses it at all
-    // outside the declaration that produced it — as a condition, a `loading`
-    // prop, or anything else. Requiring a conditional specifically missed
-    // <Combobox loading={isLoading} />, which is a perfectly good treatment.
     let hasLoadingBranch = usesOutsideDeclarator(
-      componentFunctionNode,
+      scope,
       current,
       names.loadingNames,
     );
     let hasErrorBranch = usesOutsideDeclarator(
-      componentFunctionNode,
+      scope,
       current,
       names.errorNames,
     );
-    let hasEmptyBranch = false;
+    let hasEmptyBranch = rendersEmptyComponent(scope);
 
-    if (rendersEmptyComponent(componentFunctionNode)) hasEmptyBranch = true;
-
-    walkAst(componentFunctionNode.body ?? componentFunctionNode, (inner) => {
-      // Rendering the collection: data.map(...) anywhere in the component.
+    walkAst(scope.body ?? scope, (inner) => {
       if (
         inner.type === "CallExpression" &&
         inner.callee?.type === "MemberExpression" &&
@@ -252,7 +270,6 @@ export function collectAsyncCollectionSources(
         if (objectName && names.dataNames.has(objectName)) {
           rendersCollection = true;
         }
-        // data?.map(...) and (data ?? []).map(...) reach the data too.
         if (
           !objectName &&
           referencesAny(inner.callee.object, names.dataNames)
@@ -261,7 +278,6 @@ export function collectAsyncCollectionSources(
         }
       }
 
-      // Branches are conditions: `x && <A/>` or `x ? <A/> : <B/>`.
       const condition =
         inner.type === "LogicalExpression"
           ? inner.left
@@ -272,8 +288,6 @@ export function collectAsyncCollectionSources(
               : null;
       if (!condition) return;
 
-      if (referencesAny(condition, names.loadingNames)) hasLoadingBranch = true;
-      if (referencesAny(condition, names.errorNames)) hasErrorBranch = true;
       if (
         testsCollectionLength(condition, names.dataNames) ||
         looksLikeEmptyName(condition)

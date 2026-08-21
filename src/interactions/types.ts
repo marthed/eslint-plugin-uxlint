@@ -122,7 +122,6 @@ export type ComponentStateModel = {
   propSpreadPasses: PropSpreadPass[];
   handlerPropPasses: HandlerPropPass[];
   handlerPropCalls: HandlerPropCall[];
-  asyncCollectionSources: AsyncCollectionSource[];
   handlers: InteractionHandler[];
   interactions: InteractionSource[];
 };
