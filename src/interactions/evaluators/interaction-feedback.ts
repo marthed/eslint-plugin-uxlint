@@ -481,9 +481,14 @@ export function collectInteractionFacts(
         ({ component: handlerComponent }) => handlerComponent === component,
       )
         ? interaction.node
-        : (resolvedHandlers.find(({ component: handlerComponent, handler }) =>
+        : // Prefer a handler that writes real state. A pass-through component
+          // only has delegated writes, and picking its node would report the
+          // finding at a line in whichever file that component lives in.
+          (resolvedHandlers.find(({ component: handlerComponent, handler }) =>
             handlerComponent.stateWrites.some(
-              (stateWrite) => stateWrite.handlerId === handler.id,
+              (stateWrite) =>
+                stateWrite.handlerId === handler.id &&
+                stateWrite.stateVar !== DELEGATED_FEEDBACK_STATE_VAR,
             ),
           )?.handler.node ?? interaction.node);
 

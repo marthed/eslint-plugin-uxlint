@@ -91,6 +91,10 @@ function walkTree(
   exit(node);
 }
 
+function belongsToFile(node: any, nodesInThisFile: WeakSet<object>): boolean {
+  return Boolean(node) && typeof node === "object" && nodesInThisFile.has(node);
+}
+
 function runAnalysis(context: Rule.RuleContext): AnalyzedFinding[] {
   const cwd = context.cwd ?? process.cwd();
   const {
@@ -107,6 +111,13 @@ function runAnalysis(context: Rule.RuleContext): AnalyzedFinding[] {
   const absoluteFilename = path.resolve(cwd, filename);
 
   const findings: AnalyzedFinding[] = [];
+
+  // Every node this file actually contains. Multi-file tracing pulls
+  // components from other files into the interaction store, and a finding
+  // reported against one of their nodes lands on an arbitrary line of the
+  // file being linted -- an import statement, in the case that surfaced this.
+  // Findings are checked against this set so that class of bug cannot recur.
+  const nodesInThisFile = new WeakSet<object>();
 
   if (configError) {
     findings.push({
@@ -150,6 +161,7 @@ function runAnalysis(context: Rule.RuleContext): AnalyzedFinding[] {
     const findingId = idMatch[1];
     const override = resolveBuiltinRuleOverride(projectConfig, findingId);
     if (!override.enabled) return;
+    if (!belongsToFile(finding.node, nodesInThisFile)) return;
 
     findings.push({
       ruleKey: ruleKeyForFindingId(findingId),
@@ -206,6 +218,8 @@ function runAnalysis(context: Rule.RuleContext): AnalyzedFinding[] {
   walkTree(
     sourceCode.ast,
     (node) => {
+      nodesInThisFile.add(node);
+
       switch (node.type) {
         case "JSXOpeningElement":
           addSingleNodeFindings(node);
