@@ -4,6 +4,7 @@ import {
   IMPERATIVE_FEEDBACK_STATE_VAR,
   NAVIGATION_FEEDBACK_STATE_VAR,
 } from "../types";
+import { collectStateReferenceNames } from "../collectors/reference-names";
 import type {
   ComponentStateModel,
   InteractionHandler,
@@ -291,6 +292,32 @@ function expandResolvedHandlers(
   return [...expanded.values()];
 }
 
+// An optimistic update is a start-phase write whose new value is derived from
+// the state it replaces -- setLikes(likes + 1), setItems([...items, item]),
+// setLiked(!liked), or a functional updater. That self-reference is what
+// separates "show the result before it is confirmed" from merely recording an
+// argument (setQuery(value)) or raising a pending flag (setIsSaving(true)).
+function isOptimisticWrite(stateWrite: StateWrite): boolean {
+  if (stateWrite.phase !== "start") return false;
+  if (stateWrite.stateVar.startsWith("<")) return false;
+
+  const argument = stateWrite.node?.arguments?.[0];
+  if (!argument) return false;
+
+  // A functional updater is self-referential by construction.
+  if (
+    argument.type === "ArrowFunctionExpression" ||
+    argument.type === "FunctionExpression"
+  ) {
+    return true;
+  }
+
+  return (
+    collectStateReferenceNames(argument, new Set([stateWrite.stateVar]))
+      .length > 0
+  );
+}
+
 function getAsyncPhaseCoverage(
   phases: InteractionPhase[],
 ): Set<InteractionPhase> {
@@ -374,6 +401,8 @@ export type InteractionFact = {
   writesState: boolean;
   hasVisibleFeedback: boolean;
   visiblePhases: Set<InteractionPhase>;
+  // Nodes of state changed before the request that nothing restores on failure.
+  unrolledOptimisticWrites: any[];
 };
 
 // A handler that hands its outcome to a parent-supplied callback only counts
@@ -477,6 +506,30 @@ export function collectInteractionFacts(
         visiblePhases: getAsyncPhaseCoverage(
           visibleWrites.map((stateWrite) => stateWrite.phase),
         ),
+        unrolledOptimisticWrites: isAsyncInteraction
+          ? writesForInteraction
+              .filter(
+                ({ component: handlerComponent, stateWrite }) =>
+                  isOptimisticWrite(stateWrite) &&
+                  // Only matters if the user can see the changed value.
+                  (hasDirectVisibleStateRead(
+                    handlerComponent,
+                    stateWrite.stateVar,
+                  ) ||
+                    hasVisibleChildPropRead(
+                      handlerComponent,
+                      stateWrite.stateVar,
+                      componentsByName,
+                    )) &&
+                  // A write on either recovery path counts as restoring it.
+                  !writesForInteraction.some(
+                    ({ stateWrite: other }) =>
+                      other.stateVar === stateWrite.stateVar &&
+                      (other.phase === "error" || other.phase === "settled"),
+                  ),
+              )
+              .map(({ stateWrite }) => stateWrite.node)
+          : [],
       });
     }
   }
@@ -501,6 +554,15 @@ export function evaluateInteractionFactFindings(
           "No component state written by this handler appears to be visibly rendered.",
       });
       continue;
+    }
+
+    for (const node of fact.unrolledOptimisticWrites) {
+      findings.push({
+        node,
+        message:
+          "[INTERACTION-OPTIMISTIC-001] State is changed before the request and never restored when it fails. " +
+          "Restore the previous value on the error path, or show the user that the change did not stick.",
+      });
     }
 
     for (const requirement of REQUIRED_ASYNC_PHASE_REQUIREMENTS) {

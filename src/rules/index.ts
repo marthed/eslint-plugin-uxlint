@@ -32,6 +32,11 @@ export const BUILTIN_FINDING_IDS: Array<{ id: string; description: string }> = [
     description: "Async work should show visible feedback when it succeeds",
   },
   {
+    id: "INTERACTION-OPTIMISTIC-001",
+    description:
+      "State changed before a request should be restored if the request fails",
+  },
+  {
     id: "FORM-MULTI-001",
     description: "A form that can submit should expose a detectable error path",
   },
