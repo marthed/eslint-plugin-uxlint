@@ -106,6 +106,7 @@ export function collectVisibleStateReads(
               stateVar,
               node: current,
               kind: "generic-visible-read",
+              attributeName: propName,
             });
           }
           return;

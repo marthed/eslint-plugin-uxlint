@@ -52,6 +52,10 @@ export const BUILTIN_FINDING_IDS: Array<{ id: string; description: string }> = [
       "A collection from an async source should handle a failed fetch",
   },
   {
+    id: "INTERACTION-PRESERVE-001",
+    description: "A failed request should not discard what the user typed",
+  },
+  {
     id: "MEDIA-AUTOPLAY-001",
     description: "Content that starts on its own should be stoppable",
   },

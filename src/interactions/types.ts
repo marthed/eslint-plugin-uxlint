@@ -52,6 +52,10 @@ export type StateRead = {
   stateVar: string;
   node: any;
   kind: VisibleReadKind;
+  // The host attribute the state was bound to, when it was one. `value` on an
+  // input is how a control becomes user input, which is what tells the
+  // preserve-on-failure rule that clearing it destroys something typed.
+  attributeName?: string;
 };
 
 export type PropRead = {

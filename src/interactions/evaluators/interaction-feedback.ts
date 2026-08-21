@@ -318,6 +318,43 @@ function isOptimisticWrite(stateWrite: StateWrite): boolean {
   );
 }
 
+// State bound to a control's `value` is what the user typed. Wiping it on the
+// failure path means they have to retype everything to try again -- which the
+// catalog objects to in four separate places: Form Validation ("preserve the
+// entered value after an error"), Login ("preserve the email value after a
+// failed attempt"), AI Error States ("preserved input"), and Streaming
+// Response ("preserve the prompt ... when users retry").
+const USER_INPUT_ATTRIBUTES = new Set(["value", "checked"]);
+
+function isUserInputState(
+  component: ComponentStateModel,
+  stateVar: string,
+): boolean {
+  return component.stateReads.some(
+    (stateRead) =>
+      stateRead.stateVar === stateVar &&
+      stateRead.attributeName !== undefined &&
+      USER_INPUT_ATTRIBUTES.has(stateRead.attributeName),
+  );
+}
+
+// Emptying it: setQuery(""), setItems([]), setValue(null).
+function clearsValue(stateWrite: StateWrite): boolean {
+  const argument = stateWrite.node?.arguments?.[0];
+  if (!argument) return false;
+
+  if (argument.type === "Literal") {
+    return argument.value === "" || argument.value === null;
+  }
+
+  if (argument.type === "Identifier") return argument.name === "undefined";
+  if (argument.type === "ArrayExpression") {
+    return (argument.elements ?? []).length === 0;
+  }
+
+  return false;
+}
+
 function getAsyncPhaseCoverage(
   phases: InteractionPhase[],
 ): Set<InteractionPhase> {
@@ -403,6 +440,8 @@ export type InteractionFact = {
   visiblePhases: Set<InteractionPhase>;
   // Nodes of state changed before the request that nothing restores on failure.
   unrolledOptimisticWrites: any[];
+  // Nodes of error-path writes that discard what the user typed.
+  clearedUserInputWrites: any[];
 };
 
 // A handler that hands its outcome to a parent-supplied callback only counts
@@ -535,6 +574,14 @@ export function collectInteractionFacts(
               )
               .map(({ stateWrite }) => stateWrite.node)
           : [],
+        clearedUserInputWrites: writesForInteraction
+          .filter(
+            ({ component: handlerComponent, stateWrite }) =>
+              stateWrite.phase === "error" &&
+              clearsValue(stateWrite) &&
+              isUserInputState(handlerComponent, stateWrite.stateVar),
+          )
+          .map(({ stateWrite }) => stateWrite.node),
       });
     }
   }
@@ -559,6 +606,15 @@ export function evaluateInteractionFactFindings(
           "No component state written by this handler appears to be visibly rendered.",
       });
       continue;
+    }
+
+    for (const node of fact.clearedUserInputWrites) {
+      findings.push({
+        node,
+        message:
+          "[INTERACTION-PRESERVE-001] The error path clears what the user typed. " +
+          "Keep the entered value so they can correct it instead of starting over.",
+      });
     }
 
     for (const node of fact.unrolledOptimisticWrites) {
